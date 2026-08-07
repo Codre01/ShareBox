@@ -11,7 +11,7 @@ from typing import Iterator
 
 
 def utc_now() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    return datetime.now(timezone.utc).isoformat()
 
 
 def hash_token(token: str) -> str:
@@ -96,8 +96,39 @@ class Database:
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS clipboard_items (
+                    item_id TEXT PRIMARY KEY,
+                    text TEXT NOT NULL,
+                    source_label TEXT NOT NULL,
+                    device_id TEXT,
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS pairing_requests (
+                    request_id TEXT PRIMARY KEY,
+                    pairing_id TEXT NOT NULL,
+                    suggested_name TEXT,
+                    status TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    resolved_at TEXT,
+                    display_name TEXT,
+                    device_id TEXT,
+                    device_token TEXT,
+                    folder_slug TEXT,
+                    claim_secret_hash TEXT
+                );
                 """
             )
+            # Migrations for DBs created before claim_secret_hash existed.
+            cols = {
+                r[1]
+                for r in conn.execute("PRAGMA table_info(pairing_requests)").fetchall()
+            }
+            if "claim_secret_hash" not in cols:
+                conn.execute(
+                    "ALTER TABLE pairing_requests ADD COLUMN claim_secret_hash TEXT"
+                )
 
     def create_pairing(self, pairing_id: str, token: str, expires_at: str) -> PairingSession:
         created = utc_now()
@@ -113,6 +144,22 @@ class Database:
             row = conn.execute(
                 "SELECT * FROM pairing_sessions WHERE token = ?",
                 (token,),
+            ).fetchone()
+        if not row:
+            return None
+        return PairingSession(
+            row["pairing_id"],
+            row["token"],
+            row["created_at"],
+            row["expires_at"],
+            row["consumed_at"],
+        )
+
+    def get_pairing_by_id(self, pairing_id: str) -> PairingSession | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM pairing_sessions WHERE pairing_id = ?",
+                (pairing_id,),
             ).fetchone()
         if not row:
             return None
@@ -232,3 +279,192 @@ class Database:
             last_seen_at=row["last_seen_at"],
             revoked_at=row["revoked_at"],
         )
+
+    def add_clipboard_item(
+        self,
+        item_id: str,
+        text: str,
+        source_label: str,
+        device_id: str | None,
+        *,
+        max_items: int = 20,
+    ) -> dict:
+        created = utc_now()
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO clipboard_items(item_id, text, source_label, device_id, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (item_id, text, source_label, device_id, created),
+            )
+            # FIFO: keep newest max_items; drop oldest from the bottom.
+            conn.execute(
+                """
+                DELETE FROM clipboard_items WHERE item_id NOT IN (
+                    SELECT item_id FROM (
+                        SELECT item_id FROM clipboard_items
+                        ORDER BY created_at DESC, rowid DESC
+                        LIMIT ?
+                    )
+                )
+                """,
+                (max_items,),
+            )
+        return {
+            "item_id": item_id,
+            "text": text,
+            "source_label": source_label,
+            "device_id": device_id,
+            "created_at": created,
+        }
+
+    def list_clipboard(self, limit: int = 20) -> list[dict]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT item_id, text, source_label, device_id, created_at
+                FROM clipboard_items
+                ORDER BY created_at DESC, rowid DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [
+            {
+                "item_id": r["item_id"],
+                "text": r["text"],
+                "source_label": r["source_label"],
+                "device_id": r["device_id"],
+                "created_at": r["created_at"],
+            }
+            for r in rows
+        ]
+
+    def delete_clipboard_item(self, item_id: str) -> bool:
+        with self.connect() as conn:
+            cur = conn.execute(
+                "DELETE FROM clipboard_items WHERE item_id = ?",
+                (item_id,),
+            )
+            return cur.rowcount > 0
+
+    def create_pairing_request(
+        self,
+        request_id: str,
+        pairing_id: str,
+        suggested_name: str | None,
+        claim_secret_hash: str,
+    ) -> dict:
+        created = utc_now()
+        with self.connect() as conn:
+            existing = conn.execute(
+                """
+                SELECT request_id FROM pairing_requests
+                WHERE pairing_id = ? AND status = 'pending'
+                """,
+                (pairing_id,),
+            ).fetchone()
+            if existing:
+                raise ValueError("PAIRING_BUSY")
+            conn.execute(
+                """
+                INSERT INTO pairing_requests(
+                    request_id, pairing_id, suggested_name, status, created_at, claim_secret_hash
+                ) VALUES (?, ?, ?, 'pending', ?, ?)
+                """,
+                (request_id, pairing_id, suggested_name, created, claim_secret_hash),
+            )
+        return self.get_pairing_request(request_id)  # type: ignore[return-value]
+
+    def get_pairing_request(self, request_id: str) -> dict | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM pairing_requests WHERE request_id = ?",
+                (request_id,),
+            ).fetchone()
+        if not row:
+            return None
+        return dict(row)
+
+    def list_pending_pairing_requests(self) -> list[dict]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM pairing_requests
+                WHERE status = 'pending'
+                ORDER BY created_at ASC
+                """
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def approve_pairing_request(
+        self,
+        request_id: str,
+        display_name: str,
+        device_id: str,
+        device_token: str,
+        folder_slug: str,
+    ) -> dict | None:
+        with self.connect() as conn:
+            conn.execute(
+                """
+                UPDATE pairing_requests
+                SET status = 'approved',
+                    resolved_at = ?,
+                    display_name = ?,
+                    device_id = ?,
+                    device_token = ?,
+                    folder_slug = ?
+                WHERE request_id = ? AND status = 'pending'
+                """,
+                (utc_now(), display_name, device_id, device_token, folder_slug, request_id),
+            )
+        return self.get_pairing_request(request_id)
+
+    def decline_pairing_request(self, request_id: str) -> dict | None:
+        with self.connect() as conn:
+            conn.execute(
+                """
+                UPDATE pairing_requests
+                SET status = 'declined', resolved_at = ?
+                WHERE request_id = ? AND status = 'pending'
+                """,
+                (utc_now(), request_id),
+            )
+        return self.get_pairing_request(request_id)
+
+    def claim_pairing_token(self, request_id: str, claim_secret: str) -> dict | None:
+        """Atomically return approved credentials once when claim_secret matches."""
+        secret_hash = hash_token(claim_secret)
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM pairing_requests WHERE request_id = ?",
+                (request_id,),
+            ).fetchone()
+            if not row:
+                return None
+            if row["status"] != "approved":
+                return dict(row)
+            if not row["device_token"]:
+                return dict(row)  # already claimed
+            if row["claim_secret_hash"] != secret_hash:
+                return {"status": "forbidden"}
+            payload = dict(row)
+            cur = conn.execute(
+                """
+                UPDATE pairing_requests
+                SET device_token = NULL
+                WHERE request_id = ? AND device_token IS NOT NULL AND claim_secret_hash = ?
+                """,
+                (request_id, secret_hash),
+            )
+            if cur.rowcount == 0:
+                return dict(
+                    conn.execute(
+                        "SELECT * FROM pairing_requests WHERE request_id = ?",
+                        (request_id,),
+                    ).fetchone()
+                )
+            return payload
+

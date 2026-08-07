@@ -46,10 +46,24 @@ class Api:
 
     def open_folder(self, path: str) -> None:
         import os
+        from pathlib import Path
 
-        os.startfile(path)  # type: ignore[attr-defined]
+        target = Path(path).resolve()
+        shared = Path(self.config.config.shared_folder).resolve()
+        try:
+            target.relative_to(shared)
+        except ValueError:
+            # Allow opening the shared root itself only.
+            if target != shared:
+                raise ValueError("Folder is outside the ShareBox shared folder")
+        os.startfile(str(target))  # type: ignore[attr-defined]
 
     def open_url(self, url: str) -> None:
+        from urllib.parse import urlparse
+
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"}:
+            raise ValueError("Only http/https URLs are allowed")
         webbrowser.open(url)
 
     def set_startup(self, enabled: bool) -> None:
@@ -76,7 +90,8 @@ def run_desktop() -> None:
 
     window_holder: dict = {}
     api = Api(config, window_holder)
-    ui = (UI_DIR / "control_center.html").as_uri()
+    # Same-origin with the API — avoids file:// CORS preflight failures in WebView2.
+    ui = f"http://127.0.0.1:{port}/host/control_center.html"
     window = webview.create_window(
         "ShareBox",
         url=ui,
@@ -88,7 +103,8 @@ def run_desktop() -> None:
     window_holder["window"] = window
 
     def on_shown() -> None:
-        window.evaluate_js(f"window.__SHAREBOX_API__ = 'http://127.0.0.1:{port}';")
+        # Empty base = same origin (/api/v1/...)
+        window.evaluate_js("window.__SHAREBOX_API__ = '';")
 
     def show_window() -> None:
         try:

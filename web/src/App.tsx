@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   api,
   clearCredentials,
+  ClipboardItem,
   downloadFile,
   FileItem,
   getToken,
@@ -31,6 +32,12 @@ function formatTime(ts: number): string {
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
   return new Date(ts * 1000).toLocaleDateString();
+}
+
+function formatIsoRelative(iso: string): string {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return iso;
+  return formatTime(t / 1000);
 }
 
 function IconFolder() {
@@ -68,6 +75,10 @@ export default function App() {
   const [pairing, setPairing] = useState(false);
   const [dialog, setDialog] = useState<Dialog>(null);
   const [offline, setOffline] = useState(false);
+  const [tab, setTab] = useState<"files" | "clipboard">("files");
+  const [clipItems, setClipItems] = useState<ClipboardItem[]>([]);
+  const [clipDraft, setClipDraft] = useState("");
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const pathStr = path.join("/");
@@ -76,15 +87,25 @@ export default function App() {
     return params.get("pair");
   }, []);
 
+  const refreshFiles = useCallback(async () => {
+    if (query.trim()) {
+      const res = await api.search(query.trim());
+      setItems(res.items);
+    } else {
+      const res = await api.list(pathStr);
+      setItems(res.items);
+    }
+  }, [pathStr, query]);
+
+  const refreshClipboard = useCallback(async () => {
+    const res = await api.clipboard();
+    setClipItems(res.items);
+  }, []);
+
   const refresh = useCallback(async () => {
     try {
-      if (query.trim()) {
-        const res = await api.search(query.trim());
-        setItems(res.items);
-      } else {
-        const res = await api.list(pathStr);
-        setItems(res.items);
-      }
+      if (tab === "clipboard") await refreshClipboard();
+      else await refreshFiles();
       setError(null);
       setOffline(false);
     } catch (e) {
@@ -98,18 +119,38 @@ export default function App() {
         setError(err.message || "Could not reach ShareBox host");
       }
     }
-  }, [pathStr, query]);
+  }, [tab, refreshClipboard, refreshFiles]);
 
   useEffect(() => {
     (async () => {
       try {
         if (pairToken) {
           setPairing(true);
-          const name = guessDeviceName();
-          const res = await api.completePairing(pairToken, name);
-          storeCredentials(res.device_id, res.device_token, res.display_name);
+          const suggested = guessDeviceName();
+          const req = await api.requestPairing(pairToken, suggested);
           window.history.replaceState({}, "", "/");
-          setAuthed(true);
+          // Wait for host to name + approve in Control Center.
+          const deadline = Date.now() + 5 * 60 * 1000;
+          while (Date.now() < deadline) {
+            const status = await api.pairingStatus(req.request_id, req.claim_secret);
+            if (status.status === "approved" && status.device_token && status.device_id) {
+              storeCredentials(
+                status.device_id,
+                status.device_token,
+                status.display_name || suggested,
+              );
+              setAuthed(true);
+              setPairing(false);
+              return;
+            }
+            if (status.status === "declined") {
+              setError("Pairing was declined on the computer.");
+              setPairing(false);
+              return;
+            }
+            await new Promise((r) => setTimeout(r, 1500));
+          }
+          setError("Pairing timed out. Start pairing again from ShareBox on your computer.");
           setPairing(false);
         } else if (getToken()) {
           const status = await api.status();
@@ -140,24 +181,32 @@ export default function App() {
 
   useEffect(() => {
     if (!authed) return;
-    return subscribeEvents(() => {
-      void refresh();
+    return subscribeEvents((kind) => {
+      if (kind === "clipboard_changed") void refreshClipboard().catch(() => undefined);
+      if (kind === "fs_changed" && tab === "files") void refreshFiles().catch(() => undefined);
     });
-  }, [authed, refresh]);
+  }, [authed, tab, refreshClipboard, refreshFiles]);
 
   async function onPickFiles(fileList: FileList | null) {
     if (!fileList || fileList.length === 0) return;
-    const files = Array.from(fileList).map((f) => ({ name: f.name, pct: 0 }));
-    setDialog({ type: "uploading", files });
+    // Snapshot immediately — FileList is live and becomes empty if the input is cleared.
+    const selected = Array.from(fileList);
+    if (selected.length === 0) return;
+    setDialog({
+      type: "uploading",
+      files: selected.map((f) => ({ name: f.name, pct: 0 })),
+    });
     try {
-      await api.upload(fileList, (pct) => {
+      const result = await api.upload(selected, (pct) => {
         setDialog({
           type: "uploading",
-          files: Array.from(fileList).map((f) => ({ name: f.name, pct })),
+          files: selected.map((f) => ({ name: f.name, pct })),
         });
       });
-      setDialog({ type: "uploadDone", count: fileList.length });
-      await refresh();
+      const uploaded = result.files?.length ?? selected.length;
+      setDialog({ type: "uploadDone", count: uploaded });
+      // Refresh listing after a tick so the success modal keeps its count.
+      void refresh();
     } catch (e) {
       setDialog({ type: "uploadFail", message: (e as Error).message });
     }
@@ -170,7 +219,7 @@ export default function App() {
           <div className="brand" style={{ marginBottom: 12 }}>
             ShareBox
           </div>
-          <p className="muted">{pairing ? "Pairing this device…" : "Connecting…"}</p>
+          <p className="muted">{pairing ? "Waiting for approval on your computer…" : "Connecting…"}</p>
         </div>
       </div>
     );
@@ -201,105 +250,198 @@ export default function App() {
           <div className="brand" style={{ marginRight: "auto" }}>
             ShareBox
           </div>
-          <button className="btn btn-primary" type="button" onClick={() => setDialog({ type: "upload" })}>
-            Upload
-          </button>
-        </div>
-        <div className="search-wrap">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--color-neutral-500)" strokeWidth="1.8">
-            <circle cx="11" cy="11" r="7" />
-            <path d="M21 21l-4-4" />
-          </svg>
-          <input
-            className="input"
-            placeholder="Search files"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-        </div>
-        {!isSearching && path.length > 0 && (
-          <nav className="breadcrumb" aria-label="Breadcrumb">
-            <button type="button" className="crumb" onClick={() => setPath([])}>
-              ShareBox
+          {tab === "files" && (
+            <button className="btn btn-primary" type="button" onClick={() => setDialog({ type: "upload" })}>
+              Upload
             </button>
-            {path.map((seg, i) => (
-              <span key={`${seg}-${i}`} style={{ display: "contents" }}>
-                <span style={{ color: "var(--color-neutral-600)" }}>/</span>
-                <button
-                  type="button"
-                  className={`crumb ${i === path.length - 1 ? "current" : ""}`}
-                  onClick={() => setPath(path.slice(0, i + 1))}
-                >
-                  {seg}
+          )}
+        </div>
+        <div className="seg" style={{ marginTop: 12, width: "fit-content" }}>
+          <label className="seg-opt">
+            <input
+              type="radio"
+              name="tab"
+              checked={tab === "files"}
+              onChange={() => setTab("files")}
+            />
+            Files
+          </label>
+          <label className="seg-opt">
+            <input
+              type="radio"
+              name="tab"
+              checked={tab === "clipboard"}
+              onChange={() => setTab("clipboard")}
+            />
+            Clipboard
+          </label>
+        </div>
+        {tab === "files" && (
+          <>
+            <div className="search-wrap">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--color-neutral-500)" strokeWidth="1.8">
+                <circle cx="11" cy="11" r="7" />
+                <path d="M21 21l-4-4" />
+              </svg>
+              <input
+                className="input"
+                placeholder="Search files"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </div>
+            {!isSearching && path.length > 0 && (
+              <nav className="breadcrumb" aria-label="Breadcrumb">
+                <button type="button" className="crumb" onClick={() => setPath([])}>
+                  ShareBox
                 </button>
-              </span>
-            ))}
-          </nav>
+                {path.map((seg, i) => (
+                  <span key={`${seg}-${i}`} style={{ display: "contents" }}>
+                    <span style={{ color: "var(--color-neutral-600)" }}>/</span>
+                    <button
+                      type="button"
+                      className={`crumb ${i === path.length - 1 ? "current" : ""}`}
+                      onClick={() => setPath(path.slice(0, i + 1))}
+                    >
+                      {seg}
+                    </button>
+                  </span>
+                ))}
+              </nav>
+            )}
+          </>
         )}
         {offline && <p className="muted" style={{ marginTop: 8 }}>Host unavailable — retrying when you navigate.</p>}
         {error && !offline && <p className="muted" style={{ marginTop: 8 }}>{error}</p>}
       </header>
 
       <main className="app-body">
-        {isSearching && <div className="muted" style={{ marginBottom: 12 }}>{items.length} result(s)</div>}
-        {empty ? (
-          <div className="empty-state">
-            <div className="empty-icon">
-              <IconFolder />
-            </div>
-            <div style={{ fontFamily: "var(--font-heading)", fontSize: 15 }}>
-              {isSearching ? "No matches" : "This folder is empty"}
-            </div>
-            <div className="muted" style={{ marginTop: 4 }}>
-              {isSearching ? "Try another search" : `Files on ${hostName} will show up here`}
-            </div>
-          </div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {items.map((it) => (
-              <div
-                key={it.path}
-                className="card elev-sm file-row"
+        {tab === "clipboard" ? (
+          <>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 24 }}>
+              <textarea
+                className="input"
+                rows={3}
+                placeholder="Paste or type text to share with your other devices"
+                value={clipDraft}
+                onChange={(e) => setClipDraft(e.target.value)}
+              />
+              <button
+                className="btn btn-secondary"
+                style={{ alignSelf: "flex-end" }}
+                type="button"
+                disabled={!clipDraft.trim()}
                 onClick={() => {
-                  if (it.type === "folder") {
-                    if (isSearching) setQuery("");
-                    setPath(it.path.split("/").filter(Boolean));
-                  } else {
-                    setDialog({ type: "preview", item: it });
-                  }
+                  void (async () => {
+                    const text = clipDraft.trim();
+                    if (!text) return;
+                    await api.shareClipboard(text);
+                    setClipDraft("");
+                    await refreshClipboard();
+                  })();
                 }}
               >
-                <div className="file-icon">{it.type === "folder" ? <IconFolder /> : <IconFile />}</div>
-                <div style={{ marginLeft: 12, flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {it.name}
-                  </div>
-                  <div className="card-meta">
-                    {it.type === "folder"
-                      ? formatTime(it.modified)
-                      : `${formatSize(it.size)} · ${formatTime(it.modified)}`}
-                    {isSearching && <span> · {it.path}</span>}
-                  </div>
+                Share to devices
+              </button>
+            </div>
+            {clipItems.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "40px 20px" }}>
+                <div className="muted" style={{ fontSize: 13 }}>
+                  Nothing shared yet. Paste text above to send it to your other devices.
                 </div>
-                {it.type === "file" && (
-                  <button
-                    className="btn btn-icon btn-ghost"
-                    type="button"
-                    title="Download"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void downloadFile(it.path, it.name);
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {clipItems.map((c) => (
+                  <div className="card elev-sm" key={c.item_id}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span className="tag tag-accent">{c.source_label}</span>
+                      <span className="card-meta">{formatIsoRelative(c.created_at)}</span>
+                      <button
+                        className="btn btn-ghost"
+                        style={{ marginLeft: "auto", flex: "none" }}
+                        type="button"
+                        onClick={() => {
+                          void navigator.clipboard.writeText(c.text).then(() => {
+                            setCopiedId(c.item_id);
+                            setTimeout(() => setCopiedId(null), 1200);
+                          });
+                        }}
+                      >
+                        {copiedId === c.item_id ? "Copied" : "Copy"}
+                      </button>
+                    </div>
+                    <p style={{ margin: "6px 0 0", fontSize: 14, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                      {c.text}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            {isSearching && <div className="muted" style={{ marginBottom: 12 }}>{items.length} result(s)</div>}
+            {empty ? (
+              <div className="empty-state">
+                <div className="empty-icon">
+                  <IconFolder />
+                </div>
+                <div style={{ fontFamily: "var(--font-heading)", fontSize: 15 }}>
+                  {isSearching ? "No matches" : "This folder is empty"}
+                </div>
+                <div className="muted" style={{ marginTop: 4 }}>
+                  {isSearching ? "Try another search" : `Files on ${hostName} will show up here`}
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {items.map((it) => (
+                  <div
+                    key={it.path}
+                    className="card elev-sm file-row"
+                    onClick={() => {
+                      if (it.type === "folder") {
+                        if (isSearching) setQuery("");
+                        setPath(it.path.split("/").filter(Boolean));
+                      } else {
+                        setDialog({ type: "preview", item: it });
+                      }
                     }}
                   >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                      <path d="M12 4v12M6 11l6 6 6-6" />
-                      <path d="M4 20h16" />
-                    </svg>
-                  </button>
-                )}
+                    <div className="file-icon">{it.type === "folder" ? <IconFolder /> : <IconFile />}</div>
+                    <div style={{ marginLeft: 12, flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {it.name}
+                      </div>
+                      <div className="card-meta">
+                        {it.type === "folder"
+                          ? formatTime(it.modified)
+                          : `${formatSize(it.size)} · ${formatTime(it.modified)}`}
+                        {isSearching && <span> · {it.path}</span>}
+                      </div>
+                    </div>
+                    {it.type === "file" && (
+                      <button
+                        className="btn btn-icon btn-ghost"
+                        type="button"
+                        title="Download"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void downloadFile(it.path, it.name);
+                        }}
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                          <path d="M12 4v12M6 11l6 6 6-6" />
+                          <path d="M4 20h16" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            )}
+          </>
         )}
       </main>
 

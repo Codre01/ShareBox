@@ -16,6 +16,14 @@ export type DeviceInfo = {
   folder_slug: string;
 };
 
+export type ClipboardItem = {
+  item_id: string;
+  text: string;
+  source_label: string;
+  device_id: string | null;
+  created_at: string;
+};
+
 type ApiError = { code: string; message: string };
 
 async function request<T>(
@@ -89,19 +97,36 @@ export const api = {
     request<{ query: string; items: FileItem[] }>(
       `/api/v1/files/search?q=${encodeURIComponent(q)}`,
     ),
-  completePairing: (token: string, displayName: string) =>
+  downloadUrl: (path: string) =>
+    `/api/v1/files/download?path=${encodeURIComponent(path)}`,
+  previewUrl: (path: string) =>
+    `/api/v1/files/preview?path=${encodeURIComponent(path)}`,
+  requestPairing: (token: string, suggestedName: string) =>
     request<{
-      device_id: string;
-      display_name: string;
-      folder_slug: string;
-      device_token: string;
+      request_id: string;
+      status: string;
+      claim_secret: string;
+      suggested_name?: string;
     }>(
-      "/api/v1/pairing/complete",
+      "/api/v1/pairing/request",
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, display_name: displayName }),
+        body: JSON.stringify({ token, suggested_name: suggestedName }),
       },
+      false,
+    ),
+  pairingStatus: (requestId: string, claimSecret: string) =>
+    request<{
+      status: string;
+      request_id: string;
+      device_id?: string;
+      display_name?: string;
+      folder_slug?: string;
+      device_token?: string;
+    }>(
+      `/api/v1/pairing/request/${requestId}?claim_secret=${encodeURIComponent(claimSecret)}`,
+      {},
       false,
     ),
   upload: async (files: FileList | File[], onProgress?: (pct: number) => void) => {
@@ -135,15 +160,17 @@ export const api = {
       },
     );
   },
-  downloadUrl: (path: string) => {
-    const token = getToken();
-    return `/api/v1/files/download?path=${encodeURIComponent(path)}&access_token=${encodeURIComponent(token || "")}`;
-  },
-  previewUrl: (path: string) =>
-    `/api/v1/files/preview?path=${encodeURIComponent(path)}`,
+  clipboard: () => request<{ items: ClipboardItem[] }>("/api/v1/clipboard"),
+  shareClipboard: (text: string) =>
+    request<{ item: ClipboardItem }>("/api/v1/clipboard", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    }),
+  deleteClipboard: (itemId: string) =>
+    request<{ status: string }>(`/api/v1/clipboard/${itemId}`, { method: "DELETE" }),
 };
 
-/** Prefer Authorization header downloads via blob for auth. */
 export async function downloadFile(path: string, filename: string) {
   const token = getToken();
   const res = await fetch(`/api/v1/files/download?path=${encodeURIComponent(path)}`, {
@@ -159,11 +186,9 @@ export async function downloadFile(path: string, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-export function subscribeEvents(onEvent: () => void): () => void {
+export function subscribeEvents(onEvent: (kind: string) => void): () => void {
   const token = getToken();
-  if (!token || typeof EventSource === "undefined") return () => undefined;
-  // EventSource cannot set Authorization headers — use query fallback via fetch stream would be ideal;
-  // for V1 we poll as backup when SSE auth is constrained. Use fetch-based SSE.
+  if (!token) return () => undefined;
   const ctrl = new AbortController();
   (async () => {
     try {
@@ -182,7 +207,8 @@ export function subscribeEvents(onEvent: () => void): () => void {
         const parts = buffer.split("\n\n");
         buffer = parts.pop() || "";
         for (const part of parts) {
-          if (part.includes("fs_changed")) onEvent();
+          if (part.includes("fs_changed")) onEvent("fs_changed");
+          if (part.includes("clipboard_changed")) onEvent("clipboard_changed");
         }
       }
     } catch {

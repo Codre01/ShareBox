@@ -37,7 +37,7 @@ where = ["."]
 include = ["sharebox*"]
 
 [tool.setuptools.package-data]
-sharebox = ["static/**/*"]
+sharebox = ["static/**/*", "host/**/*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

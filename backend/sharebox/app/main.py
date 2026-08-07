@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import socket
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -21,11 +20,15 @@ from sharebox.app.errors import AppError, app_error_handler
 from sharebox.app.events import bus
 from sharebox.app.files import FilesystemService
 from sharebox.app.network import list_lan_addresses
+from sharebox.app.security import is_loopback
 from sharebox.app.state import RuntimeState, ServiceState
 from sharebox.app.watcher import FolderWatcher
 
 logger = logging.getLogger("sharebox")
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+HOST_UI_DIR = Path(__file__).resolve().parent.parent / "host"
+# Repo checkout: desktop UI lives beside backend/
+REPO_HOST_UI = Path(__file__).resolve().parents[3] / "desktop" / "sharebox_desktop"
 
 
 def _configure_logging(debug: bool) -> None:
@@ -71,14 +74,19 @@ def create_app(app_data_dir: Path | None = None) -> FastAPI:
             config.shared_folder_path()
             if os.environ.get("SHAREBOX_DISABLE_WATCHER") != "1":
                 watcher.watch(fs.root)
-            addrs: list[bytes] = []
-            for a in runtime.lan_addresses:
-                try:
-                    addrs.append(socket.inet_aton(a))
-                except OSError:
-                    pass
             if os.environ.get("SHAREBOX_DISABLE_MDNS") != "1":
-                advertiser.start(addrs)
+                advertiser.start(runtime.lan_addresses)
+
+            async def _poll_mdns() -> None:
+                # Reflect background mDNS registration into status once it settles.
+                for _ in range(40):
+                    await asyncio.sleep(0.25)
+                    runtime.mdns_active = advertiser.active
+                    runtime.mdns_ip = advertiser.advertised_ip
+                    if advertiser.active:
+                        break
+
+            asyncio.create_task(_poll_mdns())
             runtime.state = ServiceState.SHARING
             runtime.sharing = True
             runtime.error = None
@@ -88,19 +96,44 @@ def create_app(app_data_dir: Path | None = None) -> FastAPI:
             runtime.state = ServiceState.STOPPING
             watcher.stop()
             advertiser.stop()
+            runtime.mdns_active = False
+            runtime.mdns_ip = None
             runtime.sharing = False
             runtime.state = ServiceState.NOT_RUNNING
 
     app = FastAPI(title="ShareBox", version="0.1.0", lifespan=lifespan)
     app.add_exception_handler(AppError, app_error_handler)
+    # Control Center is same-origin (/host). CORS covers Vite dev + loopback API origins
+    # in case WebView still sends a preflight.
+    port = config.config.port
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_origins=[
+            f"http://127.0.0.1:{port}",
+            f"http://localhost:{port}",
+            "http://127.0.0.1:5173",
+            "http://localhost:5173",
+        ],
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "X-ShareBox-Token"],
     )
     app.include_router(router)
+
+    host_ui = HOST_UI_DIR if (HOST_UI_DIR / "control_center.html").exists() else REPO_HOST_UI
+    if (host_ui / "control_center.html").exists():
+
+        @app.middleware("http")
+        async def restrict_host_ui(request, call_next):
+            if request.url.path.startswith("/host"):
+                if not is_loopback(request):
+                    return JSONResponse(
+                        {"error": {"code": "FORBIDDEN", "message": "Control Center is local-only"}},
+                        status_code=403,
+                    )
+            return await call_next(request)
+
+        app.mount("/host", StaticFiles(directory=host_ui, html=True), name="host_ui")
 
     STATIC_DIR.mkdir(parents=True, exist_ok=True)
     assets_dir = STATIC_DIR / "assets"
@@ -123,12 +156,11 @@ def create_app(app_data_dir: Path | None = None) -> FastAPI:
 
     @app.get("/{full_path:path}")
     async def spa_fallback(full_path: str):
-        if full_path.startswith(("api/", "assets/")):
+        if full_path.startswith(("api/", "assets/", "host/")):
             return JSONResponse(
                 {"error": {"code": "NOT_FOUND", "message": "Not found"}},
                 status_code=404,
             )
-        # Prefer real static files when present (e.g. favicon).
         candidate = STATIC_DIR / full_path
         if candidate.is_file() and STATIC_DIR in candidate.resolve().parents:
             return FileResponse(candidate)

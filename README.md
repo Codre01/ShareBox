@@ -60,6 +60,8 @@ pytest
 
 ShareBox V1 uses HTTP on the local LAN with high-entropy device credentials. This protects against casual unauthorized access but does **not** provide confidentiality against a capable attacker on the same network. Do not use ShareBox on untrusted networks for sensitive files.
 
+Host administration (pairing approval, device revoke, settings) is restricted to the Control Center on the host computer (loopback). See [docs/security.md](docs/security.md) for the full hardening notes.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

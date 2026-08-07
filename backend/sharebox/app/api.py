@@ -13,6 +13,7 @@ from fastapi import (
     Depends,
     File,
     Header,
+    HTTPException,
     Query,
     Request,
     UploadFile,
@@ -27,6 +28,14 @@ from sharebox.app.errors import raise_http
 from sharebox.app.events import bus
 from sharebox.app.files import FilesystemService, PathEscapeError
 from sharebox.app.network import list_lan_addresses, primary_lan_address
+from sharebox.app.security import (
+    MAX_CLIPBOARD_CHARS,
+    MAX_CLIPBOARD_ITEMS,
+    MAX_UPLOAD_FILE_BYTES,
+    MAX_UPLOAD_REQUEST_BYTES,
+    is_loopback,
+    require_loopback,
+)
 from sharebox.app.state import RuntimeState, ServiceState
 
 logger = logging.getLogger("sharebox.api")
@@ -100,6 +109,20 @@ class PairCompleteBody(BaseModel):
     display_name: str | None = None
 
 
+class PairRequestBody(BaseModel):
+    token: str
+    suggested_name: str | None = None
+
+
+class PairApproveBody(BaseModel):
+    request_id: str
+    display_name: str = Field(min_length=1, max_length=80)
+
+
+class PairDeclineBody(BaseModel):
+    request_id: str
+
+
 class RenameDeviceBody(BaseModel):
     display_name: str = Field(min_length=1, max_length=80)
 
@@ -123,14 +146,16 @@ async def health() -> dict[str, Any]:
 
 
 @router.get("/status")
-async def status(device: TrustedDevice | None = Depends(optional_device)) -> dict[str, Any]:
+async def status(
+    request: Request,
+    device: TrustedDevice | None = Depends(optional_device),
+) -> dict[str, Any]:
     ctx = get_ctx()
     cfg = ctx.config.config
     data = ctx.runtime.as_dict()
     data.update(
         {
             "host_name": cfg.host_name,
-            "shared_folder": cfg.shared_folder,
             "authenticated": device is not None,
             "device": None
             if not device
@@ -141,11 +166,18 @@ async def status(device: TrustedDevice | None = Depends(optional_device)) -> dic
             },
         }
     )
+    # Host-only details — never expose pairing secrets or folder paths on the LAN.
+    if is_loopback(request):
+        data["shared_folder"] = cfg.shared_folder
+    else:
+        data.pop("active_pairing", None)
+        data.pop("shared_folder", None)
     return data
 
 
 @router.post("/sharing/start")
-async def start_sharing() -> dict[str, Any]:
+async def start_sharing(request: Request) -> dict[str, Any]:
+    require_loopback(request)
     ctx = get_ctx()
     ctx.runtime.sharing = True
     ctx.runtime.state = ServiceState.SHARING
@@ -156,7 +188,8 @@ async def start_sharing() -> dict[str, Any]:
 
 
 @router.post("/sharing/stop")
-async def stop_sharing() -> dict[str, Any]:
+async def stop_sharing(request: Request) -> dict[str, Any]:
+    require_loopback(request)
     ctx = get_ctx()
     ctx.runtime.sharing = False
     ctx.runtime.state = ServiceState.READY
@@ -237,19 +270,34 @@ async def upload_files(
     device: TrustedDevice = Depends(require_device),
 ) -> dict[str, Any]:
     ctx = get_ctx()
-    # Lazy create device folder on first upload.
     dest_dir = ctx.fs.ensure_device_folder(device.folder_slug)
     saved: list[dict[str, Any]] = []
+    total_written = 0
     for upload in files:
         original = upload.filename or "upload.bin"
         final_path = ctx.fs.unique_name(dest_dir, original)
         tmp_path = final_path.with_name(final_path.name + ".sharebox.tmp")
+        written = 0
         try:
             async with aiofiles.open(tmp_path, "wb") as out:
                 while True:
                     chunk = await upload.read(1024 * 1024)
                     if not chunk:
                         break
+                    written += len(chunk)
+                    total_written += len(chunk)
+                    if written > MAX_UPLOAD_FILE_BYTES:
+                        raise_http(
+                            "FILE_TOO_LARGE",
+                            f"File exceeds {MAX_UPLOAD_FILE_BYTES // (1024 * 1024)} MiB limit",
+                            413,
+                        )
+                    if total_written > MAX_UPLOAD_REQUEST_BYTES:
+                        raise_http(
+                            "UPLOAD_TOO_LARGE",
+                            "Upload request exceeds size limit",
+                            413,
+                        )
                     await out.write(chunk)
             tmp_path.replace(final_path)
             saved.append(
@@ -259,6 +307,10 @@ async def upload_files(
                     "size": final_path.stat().st_size,
                 }
             )
+        except HTTPException:
+            if tmp_path.exists():
+                tmp_path.unlink(missing_ok=True)
+            raise
         except Exception:
             if tmp_path.exists():
                 tmp_path.unlink(missing_ok=True)
@@ -271,54 +323,119 @@ async def upload_files(
 
 
 @router.post("/pairing/start")
-async def pairing_start() -> dict[str, Any]:
+async def pairing_start(request: Request) -> dict[str, Any]:
+    require_loopback(request)
     ctx = get_ctx()
     session = ctx.pairing.start_pairing()
-    addr = primary_lan_address() or "127.0.0.1"
     port = ctx.config.config.port
-    # QR payload: URL that includes pairing token for the web client.
-    pair_url = f"http://{addr}:{port}/?pair={session['token']}"
+    if ctx.runtime.mdns_active:
+        host = "sharebox.local"
+    else:
+        host = primary_lan_address() or "127.0.0.1"
+    pair_url = f"http://{host}:{port}/?pair={session['token']}"
     session["pair_url"] = pair_url
     session["lan_addresses"] = list_lan_addresses()
     session["port"] = port
+    session["mdns_active"] = ctx.runtime.mdns_active
     ctx.runtime.active_pairing = session
     return session
 
 
 @router.post("/pairing/cancel")
-async def pairing_cancel() -> dict[str, str]:
+async def pairing_cancel(request: Request) -> dict[str, str]:
+    require_loopback(request)
     ctx = get_ctx()
     ctx.pairing.cancel_pairing()
     ctx.runtime.active_pairing = None
     return {"status": "cancelled"}
 
 
-@router.post("/pairing/complete")
-async def pairing_complete(body: PairCompleteBody) -> dict[str, Any]:
+@router.post("/pairing/request")
+async def pairing_request(body: PairRequestBody) -> dict[str, Any]:
+    """Device initiates pairing; waits for host to name + approve."""
     ctx = get_ctx()
     try:
-        device, device_token = ctx.pairing.complete_pairing(body.token, body.display_name)
+        req = ctx.pairing.request_pairing(body.token, body.suggested_name)
     except ValueError as exc:
         code = str(exc)
         messages = {
             "INVALID_PAIRING": ("Invalid pairing code", 400),
             "PAIRING_CONSUMED": ("Pairing code already used", 410),
             "PAIRING_EXPIRED": ("Pairing code expired", 410),
+            "PAIRING_BUSY": ("Another device is already waiting to pair", 409),
         }
         msg, status = messages.get(code, ("Pairing failed", 400))
         raise_http(code, msg, status)
+    await bus.publish({"type": "pairing_request", "request_id": req["request_id"]})
+    return {
+        "request_id": req["request_id"],
+        "status": req["status"],
+        "suggested_name": req.get("suggested_name"),
+        "claim_secret": req["claim_secret"],
+    }
+
+
+@router.get("/pairing/request/{request_id}")
+async def pairing_request_status(
+    request_id: str,
+    claim_secret: str | None = Query(default=None),
+) -> dict[str, Any]:
+    ctx = get_ctx()
+    try:
+        return ctx.pairing.request_status(request_id, claim_secret)
+    except ValueError as exc:
+        if str(exc) == "FORBIDDEN":
+            raise_http("FORBIDDEN", "Invalid claim secret", 403)
+        raise_http("INVALID_REQUEST", "Pairing request not found", 404)
+
+
+@router.get("/pairing/pending")
+async def pairing_pending(request: Request) -> dict[str, Any]:
+    require_loopback(request)
+    ctx = get_ctx()
+    return {"requests": ctx.db.list_pending_pairing_requests()}
+
+
+@router.post("/pairing/approve")
+async def pairing_approve(request: Request, body: PairApproveBody) -> dict[str, Any]:
+    require_loopback(request)
+    ctx = get_ctx()
+    try:
+        device, _token, _req = ctx.pairing.approve_request(body.request_id, body.display_name)
+    except ValueError as exc:
+        code = str(exc)
+        messages = {
+            "INVALID_REQUEST": ("Pairing request not found", 404),
+            "INVALID_PAIRING": ("Invalid pairing session", 400),
+            "PAIRING_CONSUMED": ("Pairing already completed", 410),
+            "PAIRING_EXPIRED": ("Pairing code expired", 410),
+        }
+        msg, status = messages.get(code, ("Approve failed", 400))
+        raise_http(code, msg, status)
     ctx.runtime.active_pairing = None
+    await bus.publish({"type": "pairing_approved", "request_id": body.request_id})
     return {
         "device_id": device.device_id,
         "display_name": device.display_name,
         "folder_slug": device.folder_slug,
-        "device_token": device_token,
     }
 
 
+@router.post("/pairing/decline")
+async def pairing_decline(request: Request, body: PairDeclineBody) -> dict[str, Any]:
+    require_loopback(request)
+    ctx = get_ctx()
+    try:
+        req = ctx.pairing.decline_request(body.request_id)
+    except ValueError:
+        raise_http("INVALID_REQUEST", "Pairing request not found", 404)
+    await bus.publish({"type": "pairing_declined", "request_id": body.request_id})
+    return {"status": req["status"], "request_id": req["request_id"]}
+
+
 @router.get("/devices")
-async def list_devices() -> dict[str, Any]:
-    """Host Control Center endpoint — lists trusted devices."""
+async def list_devices(request: Request) -> dict[str, Any]:
+    require_loopback(request)
     ctx = get_ctx()
     devices = [
         {
@@ -334,7 +451,10 @@ async def list_devices() -> dict[str, Any]:
 
 
 @router.patch("/devices/{device_id}")
-async def rename_device(device_id: str, body: RenameDeviceBody) -> dict[str, Any]:
+async def rename_device(
+    request: Request, device_id: str, body: RenameDeviceBody
+) -> dict[str, Any]:
+    require_loopback(request)
     ctx = get_ctx()
     device = ctx.db.get_device(device_id)
     if not device or device.revoked_at:
@@ -350,7 +470,8 @@ async def rename_device(device_id: str, body: RenameDeviceBody) -> dict[str, Any
 
 
 @router.delete("/devices/{device_id}")
-async def revoke_device(device_id: str) -> dict[str, str]:
+async def revoke_device(request: Request, device_id: str) -> dict[str, str]:
+    require_loopback(request)
     ctx = get_ctx()
     device = ctx.db.get_device(device_id)
     if not device or device.revoked_at:
@@ -359,8 +480,83 @@ async def revoke_device(device_id: str) -> dict[str, str]:
     return {"status": "revoked"}
 
 
+class ClipboardBody(BaseModel):
+    text: str = Field(min_length=1, max_length=MAX_CLIPBOARD_CHARS)
+
+
+async def require_device_or_host(
+    request: Request,
+    authorization: Annotated[str | None, Header()] = None,
+    x_sharebox_token: Annotated[str | None, Header(alias="X-ShareBox-Token")] = None,
+) -> TrustedDevice | None:
+    """Trusted device, or the host Control Center on loopback (returns None for host)."""
+    ctx = get_ctx()
+    token = extract_bearer(authorization, x_sharebox_token)
+    device = ctx.auth.authenticate(token)
+    if device:
+        return device
+    if is_loopback(request):
+        return None
+    raise_http("UNAUTHORIZED", "Authentication required", 401)
+    return None  # pragma: no cover
+
+
+@router.get("/clipboard")
+async def list_clipboard(
+    request: Request,
+    actor: TrustedDevice | None = Depends(require_device_or_host),
+) -> dict[str, Any]:
+    ctx = get_ctx()
+    return {"items": ctx.db.list_clipboard()}
+
+
+@router.post("/clipboard")
+async def post_clipboard(
+    body: ClipboardBody,
+    request: Request,
+    actor: TrustedDevice | None = Depends(require_device_or_host),
+) -> dict[str, Any]:
+    import uuid
+
+    ctx = get_ctx()
+    text = body.text.strip("\x00")
+    if not text.strip():
+        raise_http("EMPTY_CLIPBOARD", "Clipboard text is empty", 400)
+    if len(text) > MAX_CLIPBOARD_CHARS:
+        raise_http("CLIPBOARD_TOO_LARGE", "Clipboard text is too large", 413)
+    if actor is None:
+        source_label = ctx.config.config.host_name or "This computer"
+        device_id = None
+    else:
+        source_label = actor.display_name
+        device_id = actor.device_id
+    item = ctx.db.add_clipboard_item(
+        item_id=str(uuid.uuid4()),
+        text=text,
+        source_label=source_label,
+        device_id=device_id,
+        max_items=MAX_CLIPBOARD_ITEMS,
+    )
+    await bus.publish({"type": "clipboard_changed", "item_id": item["item_id"]})
+    return {"item": item}
+
+
+@router.delete("/clipboard/{item_id}")
+async def delete_clipboard(
+    item_id: str,
+    request: Request,
+    actor: TrustedDevice | None = Depends(require_device_or_host),
+) -> dict[str, str]:
+    ctx = get_ctx()
+    if not ctx.db.delete_clipboard_item(item_id):
+        raise_http("NOT_FOUND", "Clipboard item not found", 404)
+    await bus.publish({"type": "clipboard_changed", "item_id": item_id})
+    return {"status": "deleted"}
+
+
 @router.get("/settings")
-async def get_settings() -> dict[str, Any]:
+async def get_settings(request: Request) -> dict[str, Any]:
+    require_loopback(request)
     ctx = get_ctx()
     cfg = ctx.config.config
     return {
@@ -373,7 +569,8 @@ async def get_settings() -> dict[str, Any]:
 
 
 @router.patch("/settings")
-async def update_settings(body: SettingsUpdateBody) -> dict[str, Any]:
+async def update_settings(request: Request, body: SettingsUpdateBody) -> dict[str, Any]:
+    require_loopback(request)
     ctx = get_ctx()
     updates: dict[str, Any] = {}
     if body.shared_folder is not None:
@@ -398,7 +595,7 @@ async def update_settings(body: SettingsUpdateBody) -> dict[str, Any]:
         ctx.runtime.port = body.port
     if updates:
         ctx.config.update(**updates)
-    return await get_settings()
+    return await get_settings(request)
 
 
 @router.get("/events")
@@ -422,8 +619,9 @@ async def events(device: TrustedDevice = Depends(require_device)) -> StreamingRe
 
 
 @router.get("/qr.png")
-async def qr_png() -> StreamingResponse:
+async def qr_png(request: Request) -> StreamingResponse:
     """Render current pairing URL as a QR PNG for the Control Center."""
+    require_loopback(request)
     ctx = get_ctx()
     if not ctx.runtime.active_pairing:
         raise_http("NO_PAIRING", "No active pairing session", 404)
