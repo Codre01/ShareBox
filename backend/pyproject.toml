@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sharebox"
+version = "0.1.0"
+description = "ShareBox local-network file sharing backend"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "ShareBox Contributors" }]
+dependencies = [
+  "fastapi>=0.115.0",
+  "uvicorn[standard]>=0.32.0",
+  "python-multipart>=0.0.12",
+  "aiofiles>=24.1.0",
+  "watchdog>=5.0.0",
+  "zeroconf>=0.136.0",
+  "qrcode>=8.0",
+  "pillow>=10.0.0",
+  "pydantic>=2.9.0",
+  "pydantic-settings>=2.6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3.0",
+  "pytest-asyncio>=0.24.0",
+  "httpx>=0.27.0",
+]
+
+[project.scripts]
+sharebox-server = "sharebox.app.main:run"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["sharebox*"]
+
+[tool.setuptools.package-data]
+sharebox = ["static/**/*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]

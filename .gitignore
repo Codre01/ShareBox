@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+.venv/
+venv/
+.env
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# Node / web
+web/node_modules/
+web/dist/
+*.tsbuildinfo
+
+# Backend static (built from web)
+backend/sharebox/static/assets/
+backend/sharebox/static/index.html
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# App data / local
+*.db
+*.sqlite3
+.sharebox-dev/
+
+# Packaging outputs (keep scripts under build/)
+build/output/
+build/pyi-work/
+build/*.spec
+*.msi
+*.exe
+!build/*.ps1
+

@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="./nocturne-styles.css">
+<script src="_ds/nocturne-a7530058-7500-4c5b-bbb1-614d8aa6cca7/_ds_bundle.js"></script>
+<style>
+  body { margin: 0; }
+  ::selection { background: color-mix(in srgb, var(--color-accent) 30%, transparent); }
+</style>
+</helmet>
+<div style="min-height:100vh;background:var(--color-bg);color:var(--color-text);font-family:var(--font-body);">
+  <div style="max-width:720px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column;">
+
+    <div style="position:sticky;top:0;z-index:5;background:var(--color-bg);border-bottom:1px solid var(--color-divider);padding:clamp(12px,3vw,20px) clamp(16px,4vw,28px) clamp(10px,2vw,14px);">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <div style="font-family:var(--font-heading);font-weight:600;font-size:18px;margin-right:auto;">ShareBox</div>
+        <sc-if value="{{ isFilesTab }}" hint-placeholder-val="{{ true }}">
+          <button class="btn btn-primary" onClick="{{ openUpload }}">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 16V4M6 10l6-6 6 6"/><path d="M4 20h16"/></svg>
+            Upload
+          </button>
+        </sc-if>
+      </div>
+
+      <div class="seg" style="margin-top:12px;width:fit-content;">
+        <label class="seg-opt"><input type="radio" name="tab" checked="{{ isFilesTab }}" onChange="{{ setTabFiles }}"/>Files</label>
+        <label class="seg-opt"><input type="radio" name="tab" checked="{{ isClipboardTab }}" onChange="{{ setTabClipboard }}"/>Clipboard</label>
+      </div>
+
+      <sc-if value="{{ isFilesTab }}" hint-placeholder-val="{{ true }}">
+      <div style="margin-top:12px;position:relative;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--color-neutral-500)" stroke-width="1.8" style="position:absolute;left:11px;top:50%;transform:translateY(-50%);"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
+        <input class="input" style="padding-left:34px;" placeholder="Search files" value="{{ query }}" onChange="{{ onQueryChange }}"/>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ showBreadcrumb }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-top:12px;font-size:13px;">
+          <span onClick="{{ goRoot }}" style="cursor:pointer;color:var(--color-neutral-400);">ShareBox</span>
+          <sc-for list="{{ crumbs }}" as="c" hint-placeholder-count="0">
+            <span style="color:var(--color-neutral-600);">/</span>
+            <span onClick="{{ c.onClick }}" style="cursor:pointer;color:{{ c.color }};">{{ c.name }}</span>
+          </sc-for>
+        </div>
+      </sc-if>
+    </div>
+
+    <div style="flex:1;padding:clamp(16px,4vw,28px);">
+
+      <sc-if value="{{ isClipboardTab }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:var(--space-6);">
+          <textarea class="input" rows="3" placeholder="Paste or type text to share with your other devices" value="{{ clipDraft }}" onChange="{{ onClipDraftChange }}"></textarea>
+          <button class="btn btn-secondary" style="align-self:flex-end;" disabled="{{ clipDraftEmpty }}" onClick="{{ shareClip }}">Share to devices</button>
+        </div>
+
+        <sc-if value="{{ noClipItems }}" hint-placeholder-val="{{ false }}">
+          <div style="text-align:center;padding:40px 20px;">
+            <div class="text-muted" style="font-size:13px;">Nothing shared yet. Paste text above to send it to your other devices.</div>
+          </div>
+        </sc-if>
+
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <sc-for list="{{ clipItems }}" as="c" hint-placeholder-count="0">
+            <div class="card elev-sm">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span class="tag {{ c.tagClass }}">{{ c.deviceLabel }}</span>
+                <span class="card-meta">{{ c.time }}</span>
+                <button class="btn btn-ghost" style="margin-left:auto;flex:none;white-space:nowrap;" onClick="{{ c.onCopy }}">{{ c.copyLabel }}</button>
+              </div>
+              <p style="margin:6px 0 0;font-size:14px;white-space:pre-wrap;word-break:break-word;">{{ c.text }}</p>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isFilesTab }}" hint-placeholder-val="{{ true }}">
+
+      <sc-if value="{{ isSearching }}" hint-placeholder-val="{{ false }}">
+        <div class="text-muted" style="font-size:12px;margin-bottom:var(--space-4);">{{ resultsLabel }}</div>
+      </sc-if>
+
+      <sc-if value="{{ isEmpty }}" hint-placeholder-val="{{ false }}">
+        <div style="text-align:center;padding:60px 20px;">
+          <div style="width:44px;height:44px;border-radius:50%;background:var(--color-surface);display:flex;align-items:center;justify-content:center;margin:0 auto 14px;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-neutral-500)" stroke-width="1.6"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6H9l2 2h8.5A1.5 1.5 0 0 1 21 9.5v8A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>
+          </div>
+          <div style="font-family:var(--font-heading);font-size:15px;">{{ emptyTitle }}</div>
+          <div class="text-muted" style="font-size:13px;margin-top:4px;">{{ emptySubtitle }}</div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ hasItems }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <sc-for list="{{ items }}" as="it" hint-placeholder-count="4">
+            <div class="card elev-sm" style="flex-direction:row;align-items:center;padding:10px 12px;cursor:pointer;" onClick="{{ it.onOpen }}">
+              <div style="width:34px;height:34px;border-radius:var(--radius-sm);background:var(--color-neutral-800);display:flex;align-items:center;justify-content:center;flex:none;color:var(--color-neutral-300);">{{ it.iconEl }}</div>
+              <div style="margin-left:12px;flex:1;min-width:0;">
+                <div style="font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ it.name }}</div>
+                <div class="card-meta">{{ it.meta }}</div>
+              </div>
+              <sc-if value="{{ it.isFile }}" hint-placeholder-val="{{ false }}">
+                <button class="btn btn-icon btn-ghost" onClick="{{ it.onDownload }}" title="Download">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 4v12M6 11l6 6 6-6"/><path d="M4 20h16"/></svg>
+                </button>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+
+      </sc-if>
+
+    </div>
+  </div>
+
+  <sc-if value="{{ anyDialog }}" hint-placeholder-val="{{ false }}">
+    <div class="dialog-backdrop">
+      <div class="dialog">
+
+        <sc-if value="{{ showUploadSheet }}" hint-placeholder-val="{{ false }}">
+          <div class="dialog-title">Upload files</div>
+          <div style="border:1.5px dashed var(--color-divider);border-radius:var(--radius-md);padding:32px 16px;text-align:center;">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--color-neutral-400)" stroke-width="1.6" style="margin:0 auto 10px;"><path d="M12 16V4M6 10l6-6 6 6"/><path d="M4 20h16"/></svg>
+            <div class="text-muted" style="font-size:13px;">Drag files here, or</div>
+            <button class="btn btn-secondary" style="margin-top:10px;" onClick="{{ pickFiles }}">Choose files</button>
+          </div>
+          <div class="dialog-actions">
+            <button class="btn btn-secondary" onClick="{{ closeDialog }}">Cancel</button>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ showUploadProgress }}" hint-placeholder-val="{{ false }}">
+          <div class="dialog-title">Uploading to This device</div>
+          <div style="display:flex;flex-direction:column;gap:12px;">
+            <sc-for list="{{ uploadFiles }}" as="u" hint-placeholder-count="2">
+              <div>
+                <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;"><span>{{ u.name }}</span><span class="text-muted">{{ u.pct }}%</span></div>
+                <div style="height:5px;border-radius:3px;background:var(--color-neutral-800);overflow:hidden;">
+                  <div style="height:100%;background:var(--color-accent);width:{{ u.pct }}%;"></div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ showUploadDone }}" hint-placeholder-val="{{ false }}">
+          <div style="align-self:center;width:44px;height:44px;border-radius:50%;background:var(--color-accent-800);display:flex;align-items:center;justify-content:center;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent-100)" stroke-width="2"><path d="M4 12l5 5L20 6"/></svg>
+          </div>
+          <div class="dialog-title" style="text-align:center;">Upload complete</div>
+          <div class="dialog-body" style="text-align:center;">{{ uploadFiles.length }} file(s) added to This device.</div>
+          <div class="dialog-actions" style="justify-content:center;">
+            <button class="btn btn-primary" onClick="{{ closeDialog }}">Done</button>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ showPreview }}" hint-placeholder-val="{{ false }}">
+          <div class="dialog-title" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ previewFile.name }}</div>
+          <div style="border-radius:var(--radius-md);background:repeating-linear-gradient(135deg,var(--color-neutral-800),var(--color-neutral-800) 8px,var(--color-neutral-900) 8px,var(--color-neutral-900) 16px);height:220px;display:flex;align-items:center;justify-content:center;">
+            <span class="text-muted" style="font-family:ui-monospace,monospace;font-size:12px;">preview unavailable</span>
+          </div>
+          <div class="card-meta">{{ previewFile.meta }}</div>
+          <div class="dialog-actions">
+            <button class="btn btn-secondary" onClick="{{ closeDialog }}">Close</button>
+            <button class="btn btn-primary">Download</button>
+          </div>
+        </sc-if>
+
+      </div>
+    </div>
+  </sc-if>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:420,&quot;height&quot;:840}}">
+const TREE = [
+  { type: 'file', name: 'Screenshot.png', size: '482 KB', modified: '10m ago', kind: 'image' },
+  { type: 'file', name: 'Proposal.pdf', size: '1.1 MB', modified: 'Yesterday', kind: 'pdf' },
+  { type: 'folder', name: 'Documents', modified: '2d ago', children: [
+    { type: 'file', name: 'Contract.pdf', size: '212 KB', modified: '2d ago', kind: 'pdf' },
+    { type: 'file', name: 'Notes.txt', size: '4 KB', modified: '2d ago', kind: 'text' }
+  ] },
+  { type: 'folder', name: "Bolu's iPhone", modified: 'Just now', children: [
+    { type: 'file', name: 'IMG_2381.jpeg', size: '3.2 MB', modified: 'Just now', kind: 'image' },
+    { type: 'file', name: 'IMG_2382.jpeg', size: '2.8 MB', modified: 'Just now', kind: 'image' }
+  ] },
+  { type: 'folder', name: 'This device', modified: 'Empty', children: [] }
+];
+
+const h = (tag, props, ...children) => React.createElement(tag, props, ...children);
+const svgProps = { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.6 };
+const ICONS = {
+  folder: () => h('svg', svgProps, h('path', { d: 'M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2h8.5A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z' })),
+  image: () => h('svg', svgProps, h('rect', { x: 3, y: 4, width: 18, height: 16, rx: 2 }), h('circle', { cx: 9, cy: 10, r: 1.6 }), h('path', { d: 'M21 16l-5.5-5.5L4 21' })),
+  pdf: () => h('svg', svgProps, h('path', { d: 'M6 3h9l4 4v14H6z' }), h('path', { d: 'M9 13h6M9 17h6' })),
+  text: () => h('svg', svgProps, h('path', { d: 'M6 3h9l4 4v14H6z' }), h('path', { d: 'M9 12h6M9 16h6' }))
+};
+
+const INITIAL_CLIPS = [
+  { id: 'c1', text: 'wifi password: hazelnut-42', device: "Bolu's iPhone", time: '6m ago', own: false },
+  { id: 'c2', text: 'https://example.com/design-review', device: 'This device', time: '1h ago', own: true }
+];
+
+class Component extends DCLogic {
+  state = { path: [], query: '', dialog: null, uploadFiles: [], previewFile: null, tab: 'files', clipDraft: '', clipItems: INITIAL_CLIPS, copiedId: null };
+
+  currentChildren() {
+    let node = { children: TREE };
+    for (const seg of this.state.path) node = node.children.find(c => c.name === seg) || { children: [] };
+    return node.children || [];
+  }
+
+  flatten(node, path) {
+    let out = [];
+    for (const c of node) {
+      if (c.type === 'file') out.push({ ...c, path });
+      else out = out.concat(this.flatten(c.children || [], [...path, c.name]));
+    }
+    return out;
+  }
+
+  startUploadProgress() {
+    const tick = () => {
+      this.setState(s => {
+        const files = s.uploadFiles.map(f => ({ ...f, pct: Math.min(100, f.pct + 34) }));
+        const done = files.every(f => f.pct >= 100);
+        if (!done) setTimeout(tick, 260);
+        return { uploadFiles: files, dialog: done ? 'uploadDone' : 'uploadProgress' };
+      });
+    };
+    setTimeout(tick, 260);
+  }
+
+  renderVals() {
+    const s = this.state;
+    const isSearching = s.query.trim().length > 0;
+    let rawItems;
+    let resultsLabel = '';
+    if (isSearching) {
+      const matches = this.flatten(TREE, []).filter(f => f.name.toLowerCase().includes(s.query.toLowerCase()));
+      rawItems = matches.map(f => ({ ...f, meta: `${f.size} · in ${f.path.length ? f.path.join('/') : 'ShareBox'}` }));
+      resultsLabel = `${matches.length} result${matches.length === 1 ? '' : 's'} for "${s.query}"`;
+    } else {
+      rawItems = this.currentChildren().map(c => c.type === 'folder'
+        ? { ...c, meta: c.modified }
+        : { ...c, meta: `${c.size} · ${c.modified}` });
+    }
+
+    const items = rawItems.map(it => ({
+      name: it.name, meta: it.meta, isFile: it.type === 'file',
+      iconEl: ICONS[it.type === 'folder' ? 'folder' : (it.kind || 'text')](),
+      onOpen: () => {
+        if (it.type === 'folder') this.setState({ path: [...s.path, it.name], query: '' });
+        else this.setState({ dialog: 'preview', previewFile: { name: it.name, meta: `${it.size} · ${it.modified}` } });
+      },
+      onDownload: e => { e && e.stopPropagation && e.stopPropagation(); }
+    }));
+
+    const clipItems = s.clipItems.map(c => ({
+      ...c, deviceLabel: c.own ? 'This device' : c.device,
+      tagClass: c.own ? 'tag-accent' : 'tag-neutral',
+      copyLabel: s.copiedId === c.id ? 'Copied' : 'Copy',
+      onCopy: () => {
+        if (navigator.clipboard) navigator.clipboard.writeText(c.text).catch(() => {});
+        this.setState({ copiedId: c.id });
+        setTimeout(() => this.setState(st => st.copiedId === c.id ? { copiedId: null } : null), 1500);
+      }
+    }));
+
+    const crumbs = s.path.map((name, i) => ({
+      name, color: i === s.path.length - 1 ? 'var(--color-text)' : 'var(--color-neutral-400)',
+      onClick: () => this.setState({ path: s.path.slice(0, i + 1) })
+    }));
+
+    return {
+      query: s.query, onQueryChange: e => this.setState({ query: e.target.value }),
+      showBreadcrumb: s.path.length > 0 && !isSearching, crumbs,
+      goRoot: () => this.setState({ path: [] }),
+      isSearching, resultsLabel,
+      isEmpty: items.length === 0,
+      emptyTitle: isSearching ? 'No files match' : 'This folder is empty',
+      emptySubtitle: isSearching ? 'Try a different search term.' : 'Files placed here will show up automatically.',
+      hasItems: items.length > 0, items,
+
+      openUpload: () => this.setState({ dialog: 'uploadSheet' }),
+      closeDialog: () => this.setState({ dialog: null, uploadFiles: [], previewFile: null }),
+      pickFiles: () => {
+        this.setState({ dialog: 'uploadProgress', uploadFiles: [{ name: 'IMG_0931.heic', pct: 0 }, { name: 'voice-memo.m4a', pct: 0 }] });
+        this.startUploadProgress();
+      },
+      uploadFiles: s.uploadFiles,
+      previewFile: s.previewFile || { name: '', meta: '' },
+
+      anyDialog: !!s.dialog,
+      showUploadSheet: s.dialog === 'uploadSheet',
+      showUploadProgress: s.dialog === 'uploadProgress',
+      showUploadDone: s.dialog === 'uploadDone',
+      showPreview: s.dialog === 'preview',
+
+      isFilesTab: s.tab === 'files', isClipboardTab: s.tab === 'clipboard',
+      setTabFiles: () => this.setState({ tab: 'files' }),
+      setTabClipboard: () => this.setState({ tab: 'clipboard' }),
+      clipDraft: s.clipDraft, clipDraftEmpty: s.clipDraft.trim().length === 0,
+      onClipDraftChange: e => this.setState({ clipDraft: e.target.value }),
+      shareClip: () => {
+        if (!s.clipDraft.trim()) return;
+        const item = { id: 'c' + Date.now(), text: s.clipDraft.trim(), device: 'This device', time: 'Just now', own: true };
+        this.setState({ clipItems: [item, ...s.clipItems], clipDraft: '' });
+      },
+      clipItems, noClipItems: clipItems.length === 0
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sharebox-desktop"
+version = "0.1.0"
+description = "ShareBox desktop Control Center"
+requires-python = ">=3.12"
+dependencies = [
+  "pywebview>=5.3",
+  "uvicorn[standard]>=0.32.0",
+  "pystray>=0.19.5",
+  "pillow>=10.0.0",
+]
+
+[project.scripts]
+sharebox = "sharebox_desktop.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["sharebox_desktop*"]
+
+[tool.setuptools.package-data]
+sharebox_desktop = ["*.html", "*.css", "*.js"]
