@@ -99,6 +99,7 @@ export default function App() {
   const [canModify, setCanModify] = useState(false);
   const [renameDraft, setRenameDraft] = useState("");
   const [busy, setBusy] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const pathStr = path.join("/");

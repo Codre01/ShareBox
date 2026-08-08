@@ -197,6 +197,7 @@ export const api = {
     }),
   transfers: (limit = 100) =>
     request<{ items: Transfer[]; scope: string }>(`/api/v1/transfers?limit=${limit}`),
+
   clipboard: () => request<{ items: ClipboardItem[] }>("/api/v1/clipboard"),
   shareClipboard: (text: string) =>
     request<{ item: ClipboardItem }>("/api/v1/clipboard", {

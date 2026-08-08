@@ -116,6 +116,7 @@ async def optional_device(
     return ctx.auth.authenticate(token)
 
 
+
 async def require_modify_permission(
     device: TrustedDevice = Depends(require_device),
 ) -> TrustedDevice:
@@ -128,6 +129,7 @@ async def require_modify_permission(
             403,
         )
     return device
+
 async def record_transfer(
     direction: str,
     device: TrustedDevice | None,
@@ -186,6 +188,10 @@ class DeletePathBody(BaseModel):
 class RenamePathBody(BaseModel):
     path: str = Field(min_length=1)
     new_name: str = Field(min_length=1, max_length=255)
+
+
+class ArchiveTicketBody(BaseModel):
+    paths: list[str] = Field(min_length=1, max_length=MAX_ARCHIVE_SELECTION)
 
 
 class ArchiveTicketBody(BaseModel):

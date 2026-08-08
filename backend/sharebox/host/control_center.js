@@ -469,6 +469,7 @@
         await refresh();
       };
     });
+
     document.querySelectorAll("[data-modify]").forEach((box) => {
       box.onchange = async () => {
         const allow = box.checked;
@@ -491,6 +492,7 @@
         await refresh();
       };
     });
+
     const clearTransfers = $("btn-clear-transfers");
     if (clearTransfers) {
       clearTransfers.onclick = async () => {
