@@ -128,6 +128,12 @@
           <div style="margin-left:var(--space-3);flex:1;min-width:0;">
             <div style="font-family:var(--font-heading);font-weight:500;font-size:14px;">${escapeHtml(d.display_name)}</div>
             <div class="card-meta">Paired ${formatWhen(d.created_at)} · Last seen ${formatWhen(d.last_seen_at)}</div>
+            <div class="card-meta" style="margin-top:4px;">
+              <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
+                <input type="checkbox" data-modify="${d.device_id}" ${d.can_modify ? "checked" : ""} />
+                Allow this device to rename and delete files
+              </label>
+            </div>
           </div>
           <button class="btn btn-ghost" data-rename="${d.device_id}" data-name="${escapeAttr(d.display_name)}" style="flex:none;">Rename</button>
           <button class="btn btn-secondary" data-revoke="${d.device_id}" style="flex:none;margin-left:6px;">Revoke</button>
@@ -202,6 +208,25 @@
         <div class="field" style="margin-bottom:var(--space-6);">
           <label>Port</label>
           <input class="input mono" id="port" type="number" min="1024" max="65535" value="${s.port || 8765}" />
+        </div>
+        <div class="field" style="margin-bottom:var(--space-6);">
+          <label>Encrypt traffic on the network (HTTPS)</label>
+          <div class="seg" style="width:fit-content;">
+            <label class="seg-opt"><input type="radio" name="https" value="1" ${s.use_https ? "checked" : ""}/>On</label>
+            <label class="seg-opt"><input type="radio" name="https" value="0" ${!s.use_https ? "checked" : ""}/>Off</label>
+          </div>
+          <p style="color:var(--color-neutral-500);font-size:13px;margin-top:8px;">
+            ShareBox has no internet name, so it signs its own certificate. Each
+            device shows a security warning the first time — check the fingerprint
+            below matches, then continue.
+          </p>
+          ${s.cert_fingerprint ? `
+          <div style="margin-top:8px;">
+            <label style="font-size:12px;">Certificate fingerprint (SHA-256)</label>
+            <div class="mono" style="font-size:11px;word-break:break-all;color:var(--color-neutral-400);">
+              ${escapeHtml(s.cert_fingerprint)}
+            </div>
+          </div>` : ""}
         </div>
         <button class="btn btn-primary" id="btn-save-settings">Save</button>
       </div>`;
@@ -444,6 +469,30 @@
         await refresh();
       };
     });
+
+    document.querySelectorAll("[data-modify]").forEach((box) => {
+      box.onchange = async () => {
+        const allow = box.checked;
+        if (allow && !confirm(
+          "Allow this device to rename and delete files in the shared folder?\n\n" +
+          "Deleted items go to a trash folder you can recover them from."
+        )) {
+          box.checked = false;
+          return;
+        }
+        try {
+          await api("/api/v1/devices/" + box.dataset.modify, {
+            method: "PATCH",
+            body: JSON.stringify({ can_modify: allow }),
+          });
+        } catch (e) {
+          box.checked = !allow;
+          alert(e.message);
+        }
+        await refresh();
+      };
+    });
+
     const clearTransfers = $("btn-clear-transfers");
     if (clearTransfers) {
       clearTransfers.onclick = async () => {
@@ -510,12 +559,23 @@
         const host_name = $("host-name").value;
         const port = Number($("port").value);
         const launch = document.querySelector('input[name="startup"]:checked')?.value === "1";
+        const useHttps = document.querySelector('input[name="https"]:checked')?.value === "1";
+        const httpsChanged = useHttps !== Boolean(state.settings?.use_https);
         await api("/api/v1/settings", {
           method: "PATCH",
-          body: JSON.stringify({ host_name, port, launch_at_startup: launch }),
+          body: JSON.stringify({
+            host_name,
+            port,
+            launch_at_startup: launch,
+            use_https: useHttps,
+          }),
         });
         await refresh();
-        alert("Settings saved. Port changes apply on next restart.");
+        alert(
+          httpsChanged
+            ? "Settings saved. Restart ShareBox to switch the network connection, then pair or reload each device."
+            : "Settings saved. Port changes apply on next restart."
+        );
       };
     }
   }

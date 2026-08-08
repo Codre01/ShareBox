@@ -22,6 +22,7 @@ from sharebox.app.files import FilesystemService
 from sharebox.app.network import list_lan_addresses
 from sharebox.app.security import is_loopback
 from sharebox.app.state import RuntimeState, ServiceState
+from sharebox.app.tls import CertificateStore
 from sharebox.app.watcher import FolderWatcher
 
 logger = logging.getLogger("sharebox")
@@ -51,6 +52,7 @@ def create_app(app_data_dir: Path | None = None) -> FastAPI:
     ctx = AppContext(config, db, fs, auth, pairing, runtime)
     set_context(ctx)
 
+    certs = CertificateStore(config.app_data_dir)
     advertiser = MdnsAdvertiser(config.config.port, config.config.host_name)
     loop_holder: dict[str, asyncio.AbstractEventLoop] = {}
 
@@ -70,6 +72,10 @@ def create_app(app_data_dir: Path | None = None) -> FastAPI:
         runtime.state = ServiceState.INITIALIZING
         runtime.lan_addresses = list_lan_addresses()
         runtime.port = config.config.port
+        runtime.use_https = config.config.use_https
+        if runtime.use_https:
+            certs.ensure(runtime.lan_addresses, config.config.host_name)
+            runtime.cert_fingerprint = certs.fingerprint()
         try:
             config.shared_folder_path()
             if os.environ.get("SHAREBOX_DISABLE_WATCHER") != "1":
@@ -99,11 +105,17 @@ def create_app(app_data_dir: Path | None = None) -> FastAPI:
     # Control Center is same-origin (/host). CORS covers Vite dev + loopback API origins
     # in case WebView still sends a preflight.
     port = config.config.port
+    control_port = config.effective_control_port()
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[
             f"http://127.0.0.1:{port}",
             f"http://localhost:{port}",
+            f"https://127.0.0.1:{port}",
+            f"https://localhost:{port}",
+            # Control Center window when HTTPS moves the LAN listener off plain HTTP.
+            f"http://127.0.0.1:{control_port}",
+            f"http://localhost:{control_port}",
             "http://127.0.0.1:5173",
             "http://localhost:5173",
         ],
@@ -167,6 +179,7 @@ def create_app(app_data_dir: Path | None = None) -> FastAPI:
     app.state.sharebox_ctx = ctx  # type: ignore[attr-defined]
     app.state.watcher = watcher  # type: ignore[attr-defined]
     app.state.advertiser = advertiser  # type: ignore[attr-defined]
+    app.state.certificates = certs  # type: ignore[attr-defined]
     return app
 
 

@@ -47,6 +47,8 @@ Optional: in Control Center → Settings, enable **Launch at startup** so ShareB
 | See status & LAN address | Open files / folders |
 | Pair / approve / rename / revoke devices | Upload into your device folder |
 | Change shared folder & settings | Download anything in the share |
+| Allow a device to rename/delete | Download a folder, or **Select** several items, as one .zip |
+| | Rename & delete, once allowed |
 | | Download a folder, or **Select** several items, as one .zip |
 | Clipboard list (add / delete) | Clipboard tab |
 

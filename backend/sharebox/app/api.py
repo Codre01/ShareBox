@@ -35,7 +35,7 @@ from sharebox.app.config import ConfigStore
 from sharebox.app.db import Database, TrustedDevice
 from sharebox.app.errors import raise_http
 from sharebox.app.events import bus
-from sharebox.app.files import FilesystemService, PathEscapeError
+from sharebox.app.files import FilesystemService, PathEscapeError, ProtectedPathError
 from sharebox.app.network import list_lan_addresses, primary_lan_address
 from sharebox.app.security import (
     MAX_ARCHIVE_SELECTION,
@@ -116,6 +116,20 @@ async def optional_device(
     return ctx.auth.authenticate(token)
 
 
+
+async def require_modify_permission(
+    device: TrustedDevice = Depends(require_device),
+) -> TrustedDevice:
+    """A trusted device that the host has also granted edit rights."""
+    if not device.can_modify:
+        raise_http(
+            "MODIFY_FORBIDDEN",
+            "This device can browse and upload but not change host files. "
+            "Allow editing for it in ShareBox on the computer.",
+            403,
+        )
+    return device
+
 async def record_transfer(
     direction: str,
     device: TrustedDevice | None,
@@ -163,7 +177,21 @@ class PairDeclineBody(BaseModel):
 
 
 class RenameDeviceBody(BaseModel):
-    display_name: str = Field(min_length=1, max_length=80)
+    display_name: str | None = Field(default=None, min_length=1, max_length=80)
+    can_modify: bool | None = None
+
+
+class DeletePathBody(BaseModel):
+    path: str = Field(min_length=1)
+
+
+class RenamePathBody(BaseModel):
+    path: str = Field(min_length=1)
+    new_name: str = Field(min_length=1, max_length=255)
+
+
+class ArchiveTicketBody(BaseModel):
+    paths: list[str] = Field(min_length=1, max_length=MAX_ARCHIVE_SELECTION)
 
 
 class ArchiveTicketBody(BaseModel):
@@ -175,6 +203,7 @@ class SettingsUpdateBody(BaseModel):
     host_name: str | None = None
     launch_at_startup: bool | None = None
     port: int | None = None
+    use_https: bool | None = None
 
 
 @router.get("/health")
@@ -206,6 +235,7 @@ async def status(
                 "device_id": device.device_id,
                 "display_name": device.display_name,
                 "folder_slug": device.folder_slug,
+                "can_modify": device.can_modify,
             },
         }
     )
@@ -440,20 +470,87 @@ async def upload_files(
     return {"folder": device.folder_slug, "files": saved}
 
 
+@router.post("/files/delete")
+async def delete_path(
+    body: DeletePathBody,
+    device: TrustedDevice = Depends(require_modify_permission),
+) -> dict[str, Any]:
+    """Move an item to the hidden trash folder rather than destroying it."""
+    ctx = get_ctx()
+    try:
+        trashed = ctx.fs.move_to_trash(body.path)
+    except PathEscapeError:
+        raise_http("PATH_ESCAPE", "Invalid path", 400)
+    except ProtectedPathError as exc:
+        raise_http("PROTECTED_PATH", str(exc), 400)
+    except FileNotFoundError:
+        raise_http("NOT_FOUND", "That item no longer exists", 404)
+    except OSError:
+        logger.exception("Delete failed for %s", body.path)
+        raise_http("DELETE_FAILED", "Could not delete that item", 500)
+    await bus.publish({"type": "fs_changed", "reason": "delete"})
+    return {"status": "trashed", "path": body.path, "trash_path": trashed}
+
+
+@router.post("/files/rename")
+async def rename_path(
+    body: RenamePathBody,
+    device: TrustedDevice = Depends(require_modify_permission),
+) -> dict[str, Any]:
+    ctx = get_ctx()
+    try:
+        new_path = ctx.fs.rename(body.path, body.new_name)
+    except PathEscapeError:
+        raise_http("PATH_ESCAPE", "Invalid path", 400)
+    except ProtectedPathError as exc:
+        raise_http("PROTECTED_PATH", str(exc), 400)
+    except FileNotFoundError:
+        raise_http("NOT_FOUND", "That item no longer exists", 404)
+    except FileExistsError:
+        raise_http("NAME_TAKEN", "Something with that name already exists here", 409)
+    except ValueError:
+        raise_http("INVALID_NAME", "That name is not allowed", 400)
+    except OSError:
+        logger.exception("Rename failed for %s", body.path)
+        raise_http("RENAME_FAILED", "Could not rename that item", 500)
+    await bus.publish({"type": "fs_changed", "reason": "rename"})
+    return {"status": "renamed", "path": new_path}
+
+
+@router.get("/files/trash")
+async def list_trash(request: Request) -> dict[str, Any]:
+    require_loopback(request)
+    ctx = get_ctx()
+    return {"items": ctx.fs.trash_items()}
+
+
+@router.delete("/files/trash")
+async def empty_trash(request: Request) -> dict[str, Any]:
+    """Permanently delete trashed items. Host-only — this is the one-way door."""
+    require_loopback(request)
+    ctx = get_ctx()
+    removed = ctx.fs.empty_trash()
+    await bus.publish({"type": "fs_changed", "reason": "trash_emptied"})
+    return {"status": "emptied", "removed": removed}
+
+
 @router.post("/pairing/start")
 async def pairing_start(request: Request) -> dict[str, Any]:
     require_loopback(request)
     ctx = get_ctx()
     session = ctx.pairing.start_pairing()
     port = ctx.config.config.port
+    scheme = ctx.runtime.scheme
     lan_ip = primary_lan_address() or "127.0.0.1"
     # LAN IP only for now (QR + copy link). Friendly hostnames can return later.
-    pair_url = f"http://{lan_ip}:{port}/?pair={session['token']}"
+    pair_url = f"{scheme}://{lan_ip}:{port}/?pair={session['token']}"
     session["pair_url"] = pair_url
     session["pair_url_ip"] = pair_url
     session["lan_addresses"] = list_lan_addresses()
     session["port"] = port
     session["mdns_active"] = False
+    session["scheme"] = scheme
+    session["cert_fingerprint"] = ctx.runtime.cert_fingerprint
     ctx.runtime.active_pairing = session
     return session
 
@@ -561,6 +658,7 @@ async def list_devices(request: Request) -> dict[str, Any]:
             "folder_slug": d.folder_slug,
             "created_at": d.created_at,
             "last_seen_at": d.last_seen_at,
+            "can_modify": d.can_modify,
         }
         for d in ctx.db.list_devices()
     ]
@@ -576,13 +674,17 @@ async def rename_device(
     device = ctx.db.get_device(device_id)
     if not device or device.revoked_at:
         raise_http("NOT_FOUND", "Device not found", 404)
-    ctx.db.rename_device(device_id, body.display_name.strip())
+    if body.display_name is not None:
+        ctx.db.rename_device(device_id, body.display_name.strip())
+    if body.can_modify is not None:
+        ctx.db.set_device_permissions(device_id, body.can_modify)
     updated = ctx.db.get_device(device_id)
     assert updated
     return {
         "device_id": updated.device_id,
         "display_name": updated.display_name,
         "folder_slug": updated.folder_slug,
+        "can_modify": updated.can_modify,
     }
 
 
@@ -707,6 +809,10 @@ async def get_settings(request: Request) -> dict[str, Any]:
         "launch_at_startup": cfg.launch_at_startup,
         "port": cfg.port,
         "installation_id": cfg.installation_id,
+        "use_https": cfg.use_https,
+        "control_port": ctx.config.effective_control_port(),
+        "cert_fingerprint": ctx.runtime.cert_fingerprint,
+        "https_active": ctx.runtime.use_https,
     }
 
 
@@ -735,6 +841,10 @@ async def update_settings(request: Request, body: SettingsUpdateBody) -> dict[st
             raise_http("INVALID_PORT", "Port must be between 1024 and 65535", 400)
         updates["port"] = body.port
         ctx.runtime.port = body.port
+    if body.use_https is not None:
+        # Takes effect on restart: the listener's TLS context is fixed when
+        # uvicorn binds, so flipping it live would mean dropping connections.
+        updates["use_https"] = body.use_https
     if updates:
         ctx.config.update(**updates)
     return await get_settings(request)
