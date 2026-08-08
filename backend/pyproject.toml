@@ -20,6 +20,10 @@ dependencies = [
   "pillow>=10.0.0",
   "pydantic>=2.9.0",
   "pydantic-settings>=2.6.0",
+  # 42 introduced the timezone-aware not_valid_*_utc accessors; the naive ones
+  # are deprecated. Debian/Ubuntu 24.04 ship 41, so this is installed by pip
+  # even in a --system-site-packages venv.
+  "cryptography>=42.0",
 ]
 
 [project.optional-dependencies]

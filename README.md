@@ -43,7 +43,7 @@ Full walkthrough, tips, and “what if it doesn’t work”: **[docs/user-guide.
 - Devices must be **paired and approved** once; you can rename or revoke them later.
 - Clipboard snippets can be shared among trusted devices (capped list).
 
-**Security note (V1):** traffic is HTTP on your LAN with strong device tokens. Fine for home/trusted networks — not for hostile public Wi‑Fi with sensitive files. Details: [docs/security.md](docs/security.md).
+**Security note (V1):** traffic is HTTP on your LAN by default, with strong device tokens. Fine for home/trusted networks — not for hostile public Wi‑Fi with sensitive files. You can turn on **HTTPS** in Settings; it encrypts the connection, at the cost of a one‑time certificate warning on each device. Details: [docs/security.md](docs/security.md).
 
 ---
 
