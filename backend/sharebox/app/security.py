@@ -27,3 +27,6 @@ MAX_UPLOAD_FILE_BYTES = 1 * 1024 * 1024 * 1024  # 1 GiB per file
 MAX_UPLOAD_REQUEST_BYTES = 2 * 1024 * 1024 * 1024  # 2 GiB per request
 MAX_CLIPBOARD_CHARS = 64_000
 MAX_CLIPBOARD_ITEMS = 20
+
+# Rolling activity log, not an audit trail — oldest entries fall off.
+MAX_TRANSFER_HISTORY = 500

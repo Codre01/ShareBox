@@ -105,6 +105,20 @@ class Database:
                     created_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS transfers (
+                    transfer_id TEXT PRIMARY KEY,
+                    direction TEXT NOT NULL,
+                    device_id TEXT,
+                    device_label TEXT NOT NULL,
+                    path TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    size INTEGER,
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_transfers_created
+                    ON transfers(created_at DESC);
+
                 CREATE TABLE IF NOT EXISTS pairing_requests (
                     request_id TEXT PRIMARY KEY,
                     pairing_id TEXT NOT NULL,
@@ -348,6 +362,72 @@ class Database:
                 (item_id,),
             )
             return cur.rowcount > 0
+
+    def record_transfer(
+        self,
+        transfer_id: str,
+        direction: str,
+        device_id: str | None,
+        device_label: str,
+        path: str,
+        name: str,
+        size: int | None,
+        *,
+        max_items: int = 500,
+    ) -> dict:
+        created = utc_now()
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO transfers(
+                    transfer_id, direction, device_id, device_label,
+                    path, name, size, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (transfer_id, direction, device_id, device_label, path, name, size, created),
+            )
+            # Rolling window; this is an activity log, not an audit trail.
+            conn.execute(
+                """
+                DELETE FROM transfers WHERE transfer_id NOT IN (
+                    SELECT transfer_id FROM (
+                        SELECT transfer_id FROM transfers
+                        ORDER BY created_at DESC, rowid DESC
+                        LIMIT ?
+                    )
+                )
+                """,
+                (max_items,),
+            )
+        return {
+            "transfer_id": transfer_id,
+            "direction": direction,
+            "device_id": device_id,
+            "device_label": device_label,
+            "path": path,
+            "name": name,
+            "size": size,
+            "created_at": created,
+        }
+
+    def list_transfers(self, limit: int = 100, device_id: str | None = None) -> list[dict]:
+        query = """
+            SELECT transfer_id, direction, device_id, device_label, path, name, size, created_at
+            FROM transfers
+        """
+        params: list = []
+        if device_id is not None:
+            query += " WHERE device_id = ?"
+            params.append(device_id)
+        query += " ORDER BY created_at DESC, rowid DESC LIMIT ?"
+        params.append(limit)
+        with self.connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [dict(r) for r in rows]
+
+    def clear_transfers(self) -> int:
+        with self.connect() as conn:
+            return conn.execute("DELETE FROM transfers").rowcount
 
     def create_pairing_request(
         self,
