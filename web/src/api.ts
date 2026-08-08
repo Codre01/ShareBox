@@ -24,6 +24,17 @@ export type ClipboardItem = {
   created_at: string;
 };
 
+export type Transfer = {
+  transfer_id: string;
+  direction: "upload" | "download";
+  device_id: string | null;
+  device_label: string;
+  path: string;
+  name: string;
+  size: number | null;
+  created_at: string;
+};
+
 type ApiError = { code: string; message: string };
 
 async function request<T>(
@@ -160,6 +171,8 @@ export const api = {
       },
     );
   },
+  transfers: (limit = 100) =>
+    request<{ items: Transfer[]; scope: string }>(`/api/v1/transfers?limit=${limit}`),
   archiveTicket: (paths: string[]) =>
     request<{
       ticket: string;
@@ -233,6 +246,7 @@ export function subscribeEvents(onEvent: (kind: string) => void): () => void {
         for (const part of parts) {
           if (part.includes("fs_changed")) onEvent("fs_changed");
           if (part.includes("clipboard_changed")) onEvent("clipboard_changed");
+          if (part.includes("event: transfer")) onEvent("transfer");
         }
       }
     } catch {

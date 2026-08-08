@@ -4,6 +4,7 @@ import asyncio
 import io
 import logging
 import mimetypes
+import uuid
 from pathlib import Path
 from typing import Annotated, Any
 from urllib.parse import quote
@@ -40,6 +41,7 @@ from sharebox.app.security import (
     MAX_ARCHIVE_SELECTION,
     MAX_CLIPBOARD_CHARS,
     MAX_CLIPBOARD_ITEMS,
+    MAX_TRANSFER_HISTORY,
     MAX_UPLOAD_FILE_BYTES,
     MAX_UPLOAD_REQUEST_BYTES,
     is_loopback,
@@ -112,6 +114,33 @@ async def optional_device(
     ctx = get_ctx()
     token = extract_bearer(authorization, x_sharebox_token)
     return ctx.auth.authenticate(token)
+
+
+async def record_transfer(
+    direction: str,
+    device: TrustedDevice | None,
+    path: str,
+    name: str,
+    size: int | None,
+) -> dict:
+    """Log a transfer and tell listening clients about it.
+
+    Downloads are recorded when the response is handed to the client, so this
+    means "started", not "finished on the far end" — we never learn that.
+    """
+    ctx = get_ctx()
+    entry = ctx.db.record_transfer(
+        transfer_id=str(uuid.uuid4()),
+        direction=direction,
+        device_id=device.device_id if device else None,
+        device_label=device.display_name if device else ctx.config.config.host_name,
+        path=path,
+        name=name,
+        size=size,
+        max_items=MAX_TRANSFER_HISTORY,
+    )
+    await bus.publish({"type": "transfer", "direction": direction})
+    return entry
 
 
 class PairCompleteBody(BaseModel):
@@ -250,6 +279,9 @@ async def download_file(
     if not target.exists() or not target.is_file():
         raise_http("NOT_FOUND", "File not found", 404)
     media, _ = mimetypes.guess_type(str(target))
+    await record_transfer(
+        "download", device, ctx.fs.relative_path(target), target.name, target.stat().st_size
+    )
     return FileResponse(
         path=target,
         filename=target.name,
@@ -385,6 +417,13 @@ async def upload_files(
                     "path": ctx.fs.relative_path(final_path),
                     "size": final_path.stat().st_size,
                 }
+            )
+            await record_transfer(
+                "upload",
+                device,
+                ctx.fs.relative_path(final_path),
+                final_path.name,
+                final_path.stat().st_size,
             )
         except HTTPException:
             if tmp_path.exists():
@@ -630,6 +669,31 @@ async def delete_clipboard(
         raise_http("NOT_FOUND", "Clipboard item not found", 404)
     await bus.publish({"type": "clipboard_changed", "item_id": item_id})
     return {"status": "deleted"}
+
+
+@router.get("/transfers")
+async def list_transfers(
+    request: Request,
+    limit: int = Query(default=100, ge=1, le=MAX_TRANSFER_HISTORY),
+    actor: TrustedDevice | None = Depends(require_device_or_host),
+) -> dict[str, Any]:
+    """History of what moved. The host sees every device; a device sees itself."""
+    ctx = get_ctx()
+    if actor is None:
+        return {"items": ctx.db.list_transfers(limit), "scope": "all"}
+    return {
+        "items": ctx.db.list_transfers(limit, device_id=actor.device_id),
+        "scope": "device",
+    }
+
+
+@router.delete("/transfers")
+async def clear_transfers(request: Request) -> dict[str, Any]:
+    require_loopback(request)
+    ctx = get_ctx()
+    removed = ctx.db.clear_transfers()
+    await bus.publish({"type": "transfer", "direction": "cleared"})
+    return {"status": "cleared", "removed": removed}
 
 
 @router.get("/settings")

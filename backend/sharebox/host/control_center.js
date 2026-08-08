@@ -5,6 +5,7 @@
     devices: [],
     settings: null,
     clipboard: [],
+    transfers: [],
     clipDraft: "",
     pairing: null,
     pairingTimer: null,
@@ -217,12 +218,45 @@
     return escapeHtml(s).replace(/'/g, "&#39;");
   }
 
+  function formatSize(size) {
+    if (size == null) return "";
+    if (size < 1024) return `${size} B`;
+    if (size < 1048576) return `${(size / 1024).toFixed(1)} KB`;
+    if (size < 1073741824) return `${(size / 1048576).toFixed(1)} MB`;
+    return `${(size / 1073741824).toFixed(2)} GB`;
+  }
+
+  function renderActivity() {
+    const rows = state.transfers
+      .map((t) => {
+        const sent = t.direction === "upload";
+        return `<div class="card elev-sm" style="margin-bottom:var(--space-3);flex-direction:row;align-items:center;">
+          <div style="flex:1;min-width:0;">
+            <div style="font-family:var(--font-heading);font-weight:500;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(t.name)}</div>
+            <div class="card-meta">${sent ? "Received from" : "Sent to"} ${escapeHtml(t.device_label)}${t.size != null ? " · " + formatSize(t.size) : ""} · ${formatRelative(t.created_at)}</div>
+          </div>
+          <span class="tag ${sent ? "tag-accent" : ""}" style="flex:none;">${sent ? "In" : "Out"}</span>
+        </div>`;
+      })
+      .join("");
+    return `
+      <div style="max-width:640px;">
+        <h6 style="color:var(--color-neutral-500);margin-bottom:var(--space-2);">History</h6>
+        <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:var(--space-6);">
+          <h2 style="margin:0;">Activity</h2>
+          ${state.transfers.length ? `<button class="btn btn-secondary" id="btn-clear-transfers">Clear history</button>` : ""}
+        </div>
+        ${rows || `<div class="text-muted" style="font-size:13px;padding:var(--space-4) 0;">Nothing transferred yet. Uploads and downloads from your devices show up here.</div>`}
+      </div>`;
+  }
+
   function render() {
     setNav();
     const main = $("main");
     if (state.page === "status") main.innerHTML = renderStatus();
     else if (state.page === "devices") main.innerHTML = renderDevices();
     else if (state.page === "clipboard") main.innerHTML = renderClipboard();
+    else if (state.page === "activity") main.innerHTML = renderActivity();
     else main.innerHTML = renderSettings();
     bind();
     updateChrome();
@@ -410,6 +444,14 @@
         await refresh();
       };
     });
+    const clearTransfers = $("btn-clear-transfers");
+    if (clearTransfers) {
+      clearTransfers.onclick = async () => {
+        if (!confirm("Clear the transfer history? The files themselves are not touched.")) return;
+        await api("/api/v1/transfers", { method: "DELETE" });
+        await refresh();
+      };
+    }
     const draft = $("clip-draft");
     if (draft) {
       draft.oninput = () => {
@@ -485,6 +527,9 @@
       state.devices = (await api("/api/v1/devices")).devices;
       if (state.page === "clipboard") {
         state.clipboard = (await api("/api/v1/clipboard")).items;
+      }
+      if (state.page === "activity") {
+        state.transfers = (await api("/api/v1/transfers")).items;
       }
       const pending = (await api("/api/v1/pairing/pending")).requests || [];
       const dlg = $("dialog");
