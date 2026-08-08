@@ -1,0 +1,17 @@
+Package: sharebox
+Version: @VERSION@
+Architecture: @ARCH@
+Maintainer: @MAINTAINER@
+Installed-Size: @INSTALLED_SIZE@
+Depends: @DEPENDS@
+Section: net
+Priority: optional
+Homepage: https://github.com/Bolutifebabs8/ShareBox
+Description: Share files between this PC and nearby phones over Wi-Fi
+ ShareBox turns this computer into a local-network file share. Phones,
+ tablets and other computers on the same Wi-Fi open a browser, pair once
+ with a QR code, and can then browse, download and upload files.
+ .
+ Files never leave the local network - there is no cloud service and no
+ app to install on the phone. Paired devices are remembered and can be
+ renamed or revoked from the Control Center on this computer.

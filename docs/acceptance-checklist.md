@@ -1,5 +1,5 @@
 # ShareBox acceptance checklist (§162)
-# Run manually on Windows with a phone on the same LAN after packaging.
+# Run manually on each host platform, with a phone on the same LAN, after packaging.
 
 - [ ] Install ShareBox without developer dependencies (PyInstaller artifact or portable folder)
 - [ ] Create/select shared folder
@@ -25,3 +25,14 @@
 - [ ] `pytest` critical-path suite passes
 
 Automated coverage lives in `backend/tests/`.
+
+## Linux (.deb) only
+
+- [ ] `sudo apt install ./sharebox_*.deb` pulls GTK dependencies automatically
+- [ ] App appears in the application menu with the ShareBox icon
+- [ ] `sharebox` on the command line launches the same app
+- [ ] Tray icon appears (with `gir1.2-ayatanaappindicator3-0.1` installed)
+- [ ] Launch-at-startup writes `~/.config/autostart/sharebox.desktop` and survives reboot
+- [ ] "Open folder" opens the shared folder in the system file manager
+- [ ] `sudo apt remove sharebox` removes the app and leaves `~/.config/sharebox` + `~/ShareBox` intact
+- [ ] Installs on a machine that is *not* the build machine
