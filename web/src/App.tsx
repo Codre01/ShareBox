@@ -3,6 +3,7 @@ import {
   api,
   clearCredentials,
   ClipboardItem,
+  downloadArchive,
   downloadFile,
   FileItem,
   getToken,
@@ -56,6 +57,15 @@ function IconFile() {
   );
 }
 
+function IconDownload() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M12 4v12M6 11l6 6 6-6" />
+      <path d="M4 20h16" />
+    </svg>
+  );
+}
+
 function guessDeviceName(): string {
   const ua = navigator.userAgent;
   if (/iPhone/i.test(ua)) return "iPhone";
@@ -79,6 +89,9 @@ export default function App() {
   const [clipItems, setClipItems] = useState<ClipboardItem[]>([]);
   const [clipDraft, setClipDraft] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  // null = not in selection mode; a Set = selection mode with these paths picked.
+  const [selection, setSelection] = useState<Set<string> | null>(null);
+  const [zipping, setZipping] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const pathStr = path.join("/");
@@ -187,6 +200,33 @@ export default function App() {
     });
   }, [authed, tab, refreshClipboard, refreshFiles]);
 
+  // A selection only makes sense for what is on screen right now.
+  useEffect(() => {
+    setSelection(null);
+  }, [pathStr, tab, query]);
+
+  function toggleSelected(path: string) {
+    setSelection((current) => {
+      const next = new Set(current ?? []);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  }
+
+  async function downloadPaths(paths: string[]) {
+    if (paths.length === 0) return;
+    setZipping(true);
+    try {
+      await downloadArchive(paths);
+      setSelection(null);
+    } catch (e) {
+      setError((e as Error).message || "Could not prepare the download");
+    } finally {
+      setZipping(false);
+    }
+  }
+
   async function onPickFiles(fileList: FileList | null) {
     if (!fileList || fileList.length === 0) return;
     // Snapshot immediately — FileList is live and becomes empty if the input is cleared.
@@ -250,6 +290,11 @@ export default function App() {
           <div className="brand" style={{ marginRight: "auto" }}>
             ShareBox
           </div>
+          {tab === "files" && !selection && items.length > 0 && (
+            <button className="btn btn-ghost" type="button" onClick={() => setSelection(new Set())}>
+              Select
+            </button>
+          )}
           {tab === "files" && (
             <button className="btn btn-primary" type="button" onClick={() => setDialog({ type: "upload" })}>
               Upload
@@ -310,6 +355,24 @@ export default function App() {
               </nav>
             )}
           </>
+        )}
+        {tab === "files" && selection && (
+          <div className="header-row" style={{ marginTop: 12 }}>
+            <span className="muted" style={{ marginRight: "auto", fontSize: 13 }}>
+              {selection.size === 0 ? "Tap items to select" : `${selection.size} selected`}
+            </span>
+            <button className="btn btn-ghost" type="button" onClick={() => setSelection(null)}>
+              Cancel
+            </button>
+            <button
+              className="btn btn-primary"
+              type="button"
+              disabled={selection.size === 0 || zipping}
+              onClick={() => void downloadPaths([...selection])}
+            >
+              {zipping ? "Preparing…" : "Download as zip"}
+            </button>
+          </div>
         )}
         {offline && <p className="muted" style={{ marginTop: 8 }}>Host unavailable — retrying when you navigate.</p>}
         {error && !offline && <p className="muted" style={{ marginTop: 8 }}>{error}</p>}
@@ -401,7 +464,9 @@ export default function App() {
                     key={it.path}
                     className="card elev-sm file-row"
                     onClick={() => {
-                      if (it.type === "folder") {
+                      if (selection) {
+                        toggleSelected(it.path);
+                      } else if (it.type === "folder") {
                         if (isSearching) setQuery("");
                         setPath(it.path.split("/").filter(Boolean));
                       } else {
@@ -409,6 +474,16 @@ export default function App() {
                       }
                     }}
                   >
+                    {selection && (
+                      <input
+                        type="checkbox"
+                        checked={selection.has(it.path)}
+                        onChange={() => toggleSelected(it.path)}
+                        onClick={(e) => e.stopPropagation()}
+                        style={{ marginRight: 10, flex: "none" }}
+                        aria-label={`Select ${it.name}`}
+                      />
+                    )}
                     <div className="file-icon">{it.type === "folder" ? <IconFolder /> : <IconFile />}</div>
                     <div style={{ marginLeft: 12, flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
@@ -421,20 +496,19 @@ export default function App() {
                         {isSearching && <span> · {it.path}</span>}
                       </div>
                     </div>
-                    {it.type === "file" && (
+                    {!selection && (
                       <button
                         className="btn btn-icon btn-ghost"
                         type="button"
-                        title="Download"
+                        title={it.type === "folder" ? "Download folder as zip" : "Download"}
+                        disabled={zipping}
                         onClick={(e) => {
                           e.stopPropagation();
-                          void downloadFile(it.path, it.name);
+                          if (it.type === "folder") void downloadPaths([it.path]);
+                          else void downloadFile(it.path, it.name);
                         }}
                       >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                          <path d="M12 4v12M6 11l6 6 6-6" />
-                          <path d="M4 20h16" />
-                        </svg>
+                        <IconDownload />
                       </button>
                     )}
                   </div>

@@ -27,3 +27,7 @@ MAX_UPLOAD_FILE_BYTES = 1 * 1024 * 1024 * 1024  # 1 GiB per file
 MAX_UPLOAD_REQUEST_BYTES = 2 * 1024 * 1024 * 1024  # 2 GiB per request
 MAX_CLIPBOARD_CHARS = 64_000
 MAX_CLIPBOARD_ITEMS = 20
+
+# How many files/folders a single zip download request may name. The number of
+# files they expand to is capped separately by archive.MAX_ARCHIVE_ENTRIES.
+MAX_ARCHIVE_SELECTION = 500
