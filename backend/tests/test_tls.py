@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import datetime as dt
-import ipaddress
+import sys
 from pathlib import Path
 
 import pytest
 from cryptography import x509
 
-from sharebox.app.tls import CertificateStore, fingerprint
+from sharebox.app.tls import CertificateStore
 
 
 @pytest.fixture()
@@ -55,6 +55,10 @@ def test_validity_window_is_browser_acceptable(store: CertificateStore):
     assert certificate.not_valid_before_utc < dt.datetime.now(dt.timezone.utc)
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="POSIX mode bits; Windows chmod only toggles read-only, so 0600 is a no-op",
+)
 def test_key_is_not_world_readable(store: CertificateStore):
     paths = store.generate(["192.168.1.50"])
     assert paths.key.stat().st_mode & 0o077 == 0

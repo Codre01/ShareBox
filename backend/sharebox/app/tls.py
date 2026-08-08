@@ -143,6 +143,11 @@ class CertificateStore:
         )
         # The private key is per-install and never leaves the machine, but it
         # still has no business being world-readable.
+        #
+        # POSIX only: on Windows chmod just toggles the read-only bit and cannot
+        # express owner-only, so this is a no-op there. The key lands under
+        # %LOCALAPPDATA%, which is already not readable by other unprivileged
+        # users; tightening it properly would mean ACLs.
         try:
             self.paths.key.chmod(0o600)
         except OSError:

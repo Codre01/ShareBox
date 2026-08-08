@@ -194,10 +194,6 @@ class ArchiveTicketBody(BaseModel):
     paths: list[str] = Field(min_length=1, max_length=MAX_ARCHIVE_SELECTION)
 
 
-class ArchiveTicketBody(BaseModel):
-    paths: list[str] = Field(min_length=1, max_length=MAX_ARCHIVE_SELECTION)
-
-
 class SettingsUpdateBody(BaseModel):
     shared_folder: str | None = None
     host_name: str | None = None
