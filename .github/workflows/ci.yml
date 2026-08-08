@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Keep the TestClient lifespan quick and avoid hung watchdog/zeroconf teardown.
+  SHAREBOX_DISABLE_WATCHER: "1"
+  SHAREBOX_DISABLE_MDNS: "1"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install ruff
+        run: pipx install ruff
+      - name: Lint
+        run: ruff check --config backend/ruff.toml backend/ desktop/
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install backend
+        run: python -m pip install -e "./backend[dev]"
+      - name: Run tests
+        working-directory: backend
+        run: python -m pytest -q
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install
+        working-directory: web
+        run: npm ci
+      - name: Type-check and build
+        working-directory: web
+        run: npm run build
+
+  # The .deb is slow to build (PyInstaller + the GTK stack), so it is not run on
+  # every PR. It runs on demand and on tags, where a broken package matters.
+  package-linux:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install GTK stack
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            python3-gi gir1.2-gtk-3.0 gir1.2-webkit2-4.1 \
+            gir1.2-ayatanaappindicator3-0.1 dpkg-dev fakeroot lintian
+      - name: Build .deb
+        run: ./build/build_linux.sh
+      - name: Verify package metadata
+        run: |
+          deb=$(ls build/output/*.deb)
+          dpkg-deb --info "$deb"
+          dpkg-deb --contents "$deb" | grep -E 'usr/bin/sharebox|sharebox.desktop'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sharebox-deb
+          path: build/output/*.deb
+          if-no-files-found: error
