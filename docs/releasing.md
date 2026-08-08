@@ -1,70 +1,96 @@
 # Publishing a release
 
-For maintainers shipping a new version people can download from GitHub.
+Releases are built by CI. Tag the commit and the
+[Release workflow](../.github/workflows/release.yml) builds both artifacts and
+attaches them to a **draft** GitHub Release.
 
-Each platform is built on its own OS — there is no cross-compilation. A full
-release means running both builds and attaching both artifacts to one tag.
+It stops at a draft on purpose. Neither artifact is code-signed, and
+[acceptance-checklist.md](acceptance-checklist.md) needs a real LAN and a real
+phone. Automation handles the building; a human smoke-tests and presses Publish.
 
-## 1. Build
+## 1. Bump the version
 
-### Windows
+The workflow refuses to build if the tag and the code disagree, so update both
+files first:
 
-```powershell
-.\.venv\Scripts\Activate.ps1
-powershell -ExecutionPolicy Bypass -File build\build_windows.ps1
-```
+- `backend/pyproject.toml`
+- `desktop/pyproject.toml`
 
-Artifact: `build\output\ShareBox.exe`
+A tag of `v0.1.1` requires `version = "0.1.1"` in both. The `.deb` filename and
+the version reported by `/api/v1/health` come from here.
 
-### Linux
-
-```bash
-./build/build_linux.sh
-```
-
-Artifact: `build/output/sharebox_<version>_<arch>.deb`
-
-Build on the **oldest** distro you intend to support — glibc is forward
-compatible, not backward, so a package built on Ubuntu 24.04 runs on 24.10 but
-one built on 24.10 will not run on 24.04.
-
-Both artifacts are gitignored — do not commit them.
-
-## 2. Smoke-test
-
-Walk [acceptance-checklist.md](acceptance-checklist.md) on a real LAN with a
-phone, on each platform you are shipping.
-
-For the `.deb`, test the install path a real user takes, on a machine that is
-not the build machine:
+## 2. Tag and push
 
 ```bash
-sudo apt install ./sharebox_0.1.0_amd64.deb
+git tag v0.1.1
+git push origin v0.1.1
+```
+
+The workflow then:
+
+1. **verify** — checks tag against both pyproject files, runs the test suite
+2. **build-linux** — `sharebox_<version>_amd64.deb` on ubuntu-latest
+3. **build-windows** — `ShareBox.exe` on windows-latest
+4. **release** — writes `SHA256SUMS.txt`, creates the draft with notes generated
+   from merged PRs (categorised by [.github/release.yml](../.github/release.yml))
+
+To build a tag that already exists, run **Release** from the Actions tab and give
+it the tag name. Re-running replaces the assets on an existing draft.
+
+## 3. Smoke-test the draft
+
+Download both assets from the draft and walk
+[acceptance-checklist.md](acceptance-checklist.md) on a machine that is **not**
+the build machine.
+
+```bash
+sudo apt install ./sharebox_0.1.1_amd64.deb
 sharebox                 # launches, Control Center opens
 sudo apt remove sharebox # clean removal
 ```
 
-## 3. Version bump
+## 4. Edit the notes and publish
 
-The `.deb` version comes from `desktop/pyproject.toml`. Keep it in step with
-`backend/pyproject.toml` and the `version` reported by `/api/v1/health`.
+The generated notes list merged PRs.
+[release-notes-template.md](release-notes-template.md) is the guide for the human
+summary at the top. Then press **Publish release**.
 
-## 4. Tag and release
+---
+
+## What the automation does not do
+
+**Code signing.** Neither artifact is signed. Windows SmartScreen will still warn
+on first run, and the `.deb` is unsigned too. `SHA256SUMS.txt` at least lets
+people verify a download matches what CI produced. Real signing needs a
+certificate and repository secrets, and is worth doing before wide distribution.
+
+**Compatibility beyond the build image.** The `.deb` is built on `ubuntu-latest`
+(24.04), which fixes two floors:
+
+- glibc is forward- but not backward-compatible, so the package will not run on
+  meaningfully older distros.
+- The dependency is `gir1.2-webkit2-4.1`. Ubuntu 22.04 ships the older
+  `gir1.2-webkit2-4.0` under a different package name, so the package will not
+  satisfy dependencies there.
+
+In practice this targets **Ubuntu 24.04+, Debian 13+, Mint 22+**. Going older
+means pinning `runs-on: ubuntu-22.04` *and* overriding `SHAREBOX_DEPENDS` for the
+4.0 typelib — a second build, not a flag flip.
+
+**Other architectures.** amd64 only. arm64 would need an `ubuntu-24.04-arm`
+runner and a build matrix.
+
+**macOS.** No build — there is no macOS host shell yet.
+
+## Building locally
+
+Still supported, and what you want when debugging packaging:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
-
-gh release create v0.1.0 \
-  "build/output/ShareBox.exe" \
-  "build/output/sharebox_0.1.0_amd64.deb" \
-  --title "ShareBox v0.1.0" \
-  --notes-file docs/release-notes-template.md
+./build/build_linux.sh                       # Linux
+powershell -File build\build_windows.ps1     # Windows
 ```
 
-Or draft notes in the GitHub UI and attach both binaries as assets.
-
-## 5. Verify
-
-Open https://github.com/Bolutifebabs8/ShareBox/releases/latest and confirm both
-download links work from a fresh machine.
+Both write to `build/output/` (gitignored — do not commit artifacts). The Windows
+script drops a Desktop shortcut for convenience; pass `-SkipShortcut`, or set
+`CI`, to suppress it.

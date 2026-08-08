@@ -63,9 +63,10 @@ jobs:
         run: npm run build
 
   # The .deb is slow to build (PyInstaller + the GTK stack), so it is not run on
-  # every PR. It runs on demand and on tags, where a broken package matters.
+  # every PR — just on demand, to check packaging still works between releases.
+  # Tags are handled by release.yml, which builds and attaches the real artifact.
   package-linux:
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

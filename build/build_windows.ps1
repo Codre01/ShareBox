@@ -1,6 +1,15 @@
 # Build ShareBox Windows artifacts (dev / CI helper)
 # Usage (from repo root, with venv active):
 #   powershell -File build\build_windows.ps1
+#   powershell -File build\build_windows.ps1 -SkipShortcut   # no Desktop shortcut
+#
+# The shortcut is a convenience for developers building locally. It is skipped
+# automatically when $env:CI is set, since a build agent has no desktop to put
+# it on.
+
+param(
+  [switch]$SkipShortcut
+)
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
@@ -64,16 +73,20 @@ if (-not (Test-Path $exe)) {
 
 # Portable build: create a Desktop shortcut so the app is easy to launch.
 # (There is no Windows installer yet — this is plug-and-play .exe distribution.)
-$desktop = [Environment]::GetFolderPath("Desktop")
-$shortcutPath = Join-Path $desktop "ShareBox.lnk"
-$shell = New-Object -ComObject WScript.Shell
-$shortcut = $shell.CreateShortcut($shortcutPath)
-$shortcut.TargetPath = $exe
-$shortcut.WorkingDirectory = $Out
-$shortcut.IconLocation = "$exe,0"
-$shortcut.Description = "ShareBox"
-$shortcut.Save()
-Write-Host "Desktop shortcut: $shortcutPath"
+if ($SkipShortcut -or $env:CI) {
+  Write-Host "Skipping Desktop shortcut"
+} else {
+  $desktop = [Environment]::GetFolderPath("Desktop")
+  $shortcutPath = Join-Path $desktop "ShareBox.lnk"
+  $shell = New-Object -ComObject WScript.Shell
+  $shortcut = $shell.CreateShortcut($shortcutPath)
+  $shortcut.TargetPath = $exe
+  $shortcut.WorkingDirectory = $Out
+  $shortcut.IconLocation = "$exe,0"
+  $shortcut.Description = "ShareBox"
+  $shortcut.Save()
+  Write-Host "Desktop shortcut: $shortcutPath"
+}
 
 Write-Host "Artifacts in $Out"
 Get-ChildItem $Out
