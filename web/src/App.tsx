@@ -16,7 +16,9 @@ type Dialog =
   | { type: "uploading"; files: { name: string; pct: number }[] }
   | { type: "uploadDone"; count: number }
   | { type: "uploadFail"; message: string }
-  | { type: "preview"; item: FileItem };
+  | { type: "preview"; item: FileItem }
+  | { type: "confirmDelete"; item: FileItem }
+  | { type: "rename"; item: FileItem };
 
 function formatSize(size: number | null): string {
   if (size == null) return "";
@@ -79,6 +81,9 @@ export default function App() {
   const [clipItems, setClipItems] = useState<ClipboardItem[]>([]);
   const [clipDraft, setClipDraft] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [canModify, setCanModify] = useState(false);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [busy, setBusy] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const pathStr = path.join("/");
@@ -155,6 +160,7 @@ export default function App() {
         } else if (getToken()) {
           const status = await api.status();
           setHostName(status.host_name || "ShareBox");
+          setCanModify(Boolean(status.device?.can_modify));
           if (status.authenticated) {
             setAuthed(true);
           } else {
@@ -186,6 +192,37 @@ export default function App() {
       if (kind === "fs_changed" && tab === "files") void refreshFiles().catch(() => undefined);
     });
   }, [authed, tab, refreshClipboard, refreshFiles]);
+
+  async function onDelete(item: FileItem) {
+    setBusy(true);
+    try {
+      await api.deletePath(item.path);
+      setDialog(null);
+      await refresh();
+    } catch (e) {
+      setDialog({ type: "uploadFail", message: (e as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onRename(item: FileItem, newName: string) {
+    const trimmed = newName.trim();
+    if (!trimmed || trimmed === item.name) {
+      setDialog(null);
+      return;
+    }
+    setBusy(true);
+    try {
+      await api.renamePath(item.path, trimmed);
+      setDialog(null);
+      await refresh();
+    } catch (e) {
+      setDialog({ type: "uploadFail", message: (e as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function onPickFiles(fileList: FileList | null) {
     if (!fileList || fileList.length === 0) return;
@@ -421,6 +458,38 @@ export default function App() {
                         {isSearching && <span> · {it.path}</span>}
                       </div>
                     </div>
+                    {canModify && (
+                      <>
+                        <button
+                          className="btn btn-icon btn-ghost"
+                          type="button"
+                          title="Rename"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setRenameDraft(it.name);
+                            setDialog({ type: "rename", item: it });
+                          }}
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                            <path d="M4 20h4l10-10-4-4L4 16z" />
+                            <path d="M14 6l4 4" />
+                          </svg>
+                        </button>
+                        <button
+                          className="btn btn-icon btn-ghost"
+                          type="button"
+                          title="Delete"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDialog({ type: "confirmDelete", item: it });
+                          }}
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                            <path d="M5 7h14M10 7V5h4v2M6 7l1 13h10l1-13" />
+                          </svg>
+                        </button>
+                      </>
+                    )}
                     {it.type === "file" && (
                       <button
                         className="btn btn-icon btn-ghost"
@@ -522,6 +591,57 @@ export default function App() {
                 <div className="dialog-actions">
                   <button className="btn btn-primary" type="button" onClick={() => setDialog(null)}>
                     Close
+                  </button>
+                </div>
+              </>
+            )}
+            {dialog.type === "confirmDelete" && (
+              <>
+                <div className="dialog-title">Delete {dialog.item.type}?</div>
+                <div className="dialog-body">
+                  <strong>{dialog.item.name}</strong> moves to the ShareBox trash on{" "}
+                  {hostName}. Someone at that computer can restore it or empty the trash.
+                </div>
+                <div className="dialog-actions">
+                  <button className="btn btn-secondary" type="button" disabled={busy} onClick={() => setDialog(null)}>
+                    Cancel
+                  </button>
+                  <button
+                    className="btn btn-primary"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void onDelete(dialog.item)}
+                  >
+                    {busy ? "Deleting…" : "Delete"}
+                  </button>
+                </div>
+              </>
+            )}
+            {dialog.type === "rename" && (
+              <>
+                <div className="dialog-title">Rename</div>
+                <div className="dialog-body">
+                  <input
+                    className="input"
+                    value={renameDraft}
+                    autoFocus
+                    onChange={(e) => setRenameDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void onRename(dialog.item, renameDraft);
+                    }}
+                  />
+                </div>
+                <div className="dialog-actions">
+                  <button className="btn btn-secondary" type="button" disabled={busy} onClick={() => setDialog(null)}>
+                    Cancel
+                  </button>
+                  <button
+                    className="btn btn-primary"
+                    type="button"
+                    disabled={busy || !renameDraft.trim()}
+                    onClick={() => void onRename(dialog.item, renameDraft)}
+                  >
+                    {busy ? "Renaming…" : "Rename"}
                   </button>
                 </div>
               </>

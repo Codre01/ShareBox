@@ -14,6 +14,7 @@ export type DeviceInfo = {
   device_id: string;
   display_name: string;
   folder_slug: string;
+  can_modify?: boolean;
 };
 
 export type ClipboardItem = {
@@ -160,6 +161,18 @@ export const api = {
       },
     );
   },
+  deletePath: (path: string) =>
+    request<{ status: string; trash_path: string }>("/api/v1/files/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path }),
+    }),
+  renamePath: (path: string, newName: string) =>
+    request<{ status: string; path: string }>("/api/v1/files/rename", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path, new_name: newName }),
+    }),
   clipboard: () => request<{ items: ClipboardItem[] }>("/api/v1/clipboard"),
   shareClipboard: (text: string) =>
     request<{ item: ClipboardItem }>("/api/v1/clipboard", {

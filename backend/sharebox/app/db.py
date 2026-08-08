@@ -31,6 +31,9 @@ class TrustedDevice:
     created_at: str
     last_seen_at: str | None
     revoked_at: str | None = None
+    # Off unless the host grants it: a paired phone can browse and upload, but
+    # cannot touch existing host files until someone says so.
+    can_modify: bool = False
 
 
 @dataclass
@@ -73,7 +76,8 @@ class Database:
                     token_hash TEXT NOT NULL UNIQUE,
                     created_at TEXT NOT NULL,
                     last_seen_at TEXT,
-                    revoked_at TEXT
+                    revoked_at TEXT,
+                    can_modify INTEGER NOT NULL DEFAULT 0
                 );
 
                 CREATE TABLE IF NOT EXISTS pairing_sessions (
@@ -128,6 +132,14 @@ class Database:
             if "claim_secret_hash" not in cols:
                 conn.execute(
                     "ALTER TABLE pairing_requests ADD COLUMN claim_secret_hash TEXT"
+                )
+            device_cols = {
+                r[1] for r in conn.execute("PRAGMA table_info(trusted_devices)").fetchall()
+            }
+            if "can_modify" not in device_cols:
+                conn.execute(
+                    "ALTER TABLE trusted_devices "
+                    "ADD COLUMN can_modify INTEGER NOT NULL DEFAULT 0"
                 )
 
     def create_pairing(self, pairing_id: str, token: str, expires_at: str) -> PairingSession:
@@ -268,8 +280,16 @@ class Database:
             ).fetchone()
         return row is not None
 
+    def set_device_permissions(self, device_id: str, can_modify: bool) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                "UPDATE trusted_devices SET can_modify = ? WHERE device_id = ?",
+                (1 if can_modify else 0, device_id),
+            )
+
     @staticmethod
     def _device_from_row(row: sqlite3.Row) -> TrustedDevice:
+        keys = row.keys()
         return TrustedDevice(
             device_id=row["device_id"],
             display_name=row["display_name"],
@@ -278,6 +298,7 @@ class Database:
             created_at=row["created_at"],
             last_seen_at=row["last_seen_at"],
             revoked_at=row["revoked_at"],
+            can_modify=bool(row["can_modify"]) if "can_modify" in keys else False,
         )
 
     def add_clipboard_item(

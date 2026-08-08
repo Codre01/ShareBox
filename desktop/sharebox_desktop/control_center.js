@@ -127,6 +127,12 @@
           <div style="margin-left:var(--space-3);flex:1;min-width:0;">
             <div style="font-family:var(--font-heading);font-weight:500;font-size:14px;">${escapeHtml(d.display_name)}</div>
             <div class="card-meta">Paired ${formatWhen(d.created_at)} · Last seen ${formatWhen(d.last_seen_at)}</div>
+            <div class="card-meta" style="margin-top:4px;">
+              <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
+                <input type="checkbox" data-modify="${d.device_id}" ${d.can_modify ? "checked" : ""} />
+                Allow this device to rename and delete files
+              </label>
+            </div>
           </div>
           <button class="btn btn-ghost" data-rename="${d.device_id}" data-name="${escapeAttr(d.display_name)}" style="flex:none;">Rename</button>
           <button class="btn btn-secondary" data-revoke="${d.device_id}" style="flex:none;margin-left:6px;">Revoke</button>
@@ -407,6 +413,28 @@
           method: "PATCH",
           body: JSON.stringify({ display_name: name }),
         });
+        await refresh();
+      };
+    });
+    document.querySelectorAll("[data-modify]").forEach((box) => {
+      box.onchange = async () => {
+        const allow = box.checked;
+        if (allow && !confirm(
+          "Allow this device to rename and delete files in the shared folder?\n\n" +
+          "Deleted items go to a trash folder you can recover them from."
+        )) {
+          box.checked = false;
+          return;
+        }
+        try {
+          await api("/api/v1/devices/" + box.dataset.modify, {
+            method: "PATCH",
+            body: JSON.stringify({ can_modify: allow }),
+          });
+        } catch (e) {
+          box.checked = !allow;
+          alert(e.message);
+        }
         await refresh();
       };
     });
