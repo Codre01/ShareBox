@@ -17,9 +17,11 @@ Optional: in Control Center → Settings, enable **Launch at startup** so ShareB
 1. Confirm the **shared folder** (default is under your user profile, often `ShareBox`).
 2. Keep the Control Center window open (or leave ShareBox running in the tray).
 3. Click **Pair new device**.
-4. On your phone (same Wi‑Fi), scan the QR code or open the URL shown.
-5. On the PC, **approve** the request and give the device a clear name (this also names its upload folder).
-6. On the phone, browse files, upload, download, and use the shared clipboard.
+4. On the new device (same Wi‑Fi):
+   - **Phone:** scan the QR code, or  
+   - **Another PC:** click **Copy link** in Control Center, paste/open that URL in a browser.
+5. On the host PC, **approve** the request and give the device a clear name (this also names its upload folder).
+6. On the new device, browse files, upload, download, and use the shared clipboard.
 
 ## Everyday use
 

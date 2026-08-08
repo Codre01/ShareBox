@@ -19,8 +19,8 @@ Your computer runs ShareBox. Everyone else just opens a browser.
 1. Download **ShareBox.exe** from the [latest release](https://github.com/Bolutifebabs8/ShareBox/releases/latest).
 2. Double‑click it. Windows may warn about an unknown app — choose **More info → Run anyway** (normal for new open‑source apps that aren’t code‑signed yet).
 3. ShareBox opens a Control Center window and shares a folder (default: `Documents\ShareBox` or `~\ShareBox`).
-4. On your phone (same Wi‑Fi), tap **Pair new device** in Control Center and scan the QR code — or open the URL shown.
-5. Approve the device on the PC, give it a name, then browse / upload / download in the phone browser.
+4. In Control Center, click **Pair new device**. On a phone, scan the QR code; on another PC, click **Copy link** and open that URL in a browser (same Wi‑Fi).
+5. Approve the device on the host PC, give it a name, then browse / upload / download in the browser.
 
 Full walkthrough, tips, and “what if it doesn’t work”: **[docs/user-guide.md](docs/user-guide.md)** · **[docs/troubleshooting.md](docs/troubleshooting.md)**
 

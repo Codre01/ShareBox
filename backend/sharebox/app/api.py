@@ -328,12 +328,16 @@ async def pairing_start(request: Request) -> dict[str, Any]:
     ctx = get_ctx()
     session = ctx.pairing.start_pairing()
     port = ctx.config.config.port
+    lan_ip = primary_lan_address() or "127.0.0.1"
     if ctx.runtime.mdns_active:
         host = "sharebox.local"
     else:
-        host = primary_lan_address() or "127.0.0.1"
+        host = lan_ip
+    # QR may use sharebox.local; the IP link is more reliable for another PC.
     pair_url = f"http://{host}:{port}/?pair={session['token']}"
+    pair_url_ip = f"http://{lan_ip}:{port}/?pair={session['token']}"
     session["pair_url"] = pair_url
+    session["pair_url_ip"] = pair_url_ip
     session["lan_addresses"] = list_lan_addresses()
     session["port"] = port
     session["mdns_active"] = ctx.runtime.mdns_active

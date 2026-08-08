@@ -240,19 +240,44 @@
     $("device-count").textContent = String(state.devices.length);
   }
 
+  async function copyText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.setAttribute("readonly", "");
+        ta.style.position = "fixed";
+        ta.style.left = "-9999px";
+        document.body.appendChild(ta);
+        ta.select();
+        const ok = document.execCommand("copy");
+        ta.remove();
+        return ok;
+      } catch {
+        return false;
+      }
+    }
+  }
+
   function showPairDialog(session) {
     const dlg = $("dialog");
     const qrUrl = apiBase() + "/api/v1/qr.png?" + Date.now();
+    // Prefer LAN IP for sharing with another PC (more reliable than .local).
+    const link = session.pair_url_ip || session.pair_url;
     dlg.style.display = "flex";
     dlg.innerHTML = `
       <div class="dialog">
         <div class="dialog-title">Pair a new device</div>
-        <div class="dialog-body">Open a browser on the new device and scan this code.</div>
+        <div class="dialog-body">Scan the QR on a phone, or copy the link and open it on another PC (same Wi‑Fi). Then approve and name the device here.</div>
         <img src="${qrUrl}" alt="Pairing QR" width="180" height="180" style="align-self:center;border-radius:var(--radius-md);background:#fff;padding:8px;" />
         <div class="text-muted" style="text-align:center;font-size:12px;" id="pair-ttl">Expires soon</div>
-        <div class="mono" style="text-align:center;font-size:11px;word-break:break-all;">${escapeHtml(session.pair_url)}</div>
+        <div class="mono" style="text-align:center;font-size:11px;word-break:break-all;" id="pair-link">${escapeHtml(link)}</div>
         <div class="dialog-actions">
           <button class="btn btn-secondary" id="btn-cancel-pair">Cancel</button>
+          <button class="btn btn-primary" id="btn-copy-pair">Copy link</button>
         </div>
       </div>`;
     $("btn-cancel-pair").onclick = async () => {
@@ -261,6 +286,16 @@
       } catch {}
       hideDialog();
       if (state.pairingTimer) clearInterval(state.pairingTimer);
+    };
+    $("btn-copy-pair").onclick = async () => {
+      const btn = $("btn-copy-pair");
+      const ok = await copyText(link);
+      if (btn) {
+        btn.textContent = ok ? "Copied!" : "Copy failed";
+        setTimeout(() => {
+          if ($("btn-copy-pair")) $("btn-copy-pair").textContent = "Copy link";
+        }, 1600);
+      }
     };
     const expires = Date.parse(session.expires_at);
     state.pairingTimer = setInterval(() => {

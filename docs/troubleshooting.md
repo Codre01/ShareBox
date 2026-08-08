@@ -25,9 +25,10 @@ Expected until the exe is code‑signed. Use **More info → Run anyway** if you
 
 ## Pairing stuck / “pending” forever
 
-1. Approve or decline on the **PC** Control Center (phones cannot self-approve).
-2. Start pairing again if the QR expired (pairing sessions time out).
-3. Don’t share the pairing link across different phones — each device should start its own pair flow.
+1. Approve or decline on the **host** Control Center (other devices cannot self-approve).
+2. Start pairing again if the QR / link expired (pairing sessions time out).
+3. Don’t reuse one pairing link on multiple devices — start a new **Pair new device** session for each.
+4. For another PC: use **Copy link** (LAN IP URL). If the page won’t load, confirm both machines are on the same Wi‑Fi and try the IP shown in Control Center.
 
 ## Upload fails or says file too large
 
