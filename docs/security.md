@@ -15,10 +15,15 @@ Settings → **Encrypt traffic on the network (HTTPS)**. Off by default; takes
 effect on restart.
 
 When enabled, the host generates a self-signed certificate covering `localhost`
-and its current LAN addresses, kept in the app-data directory (`tls/`) with the
-private key mode `0600`. The certificate is regenerated when it is close to
-expiry or when the machine picks up a LAN address it does not cover — joining a
-different Wi-Fi network, for example.
+and its current LAN addresses, kept in the app-data directory (`tls/`). The
+certificate is regenerated when it is close to expiry or when the machine picks
+up a LAN address it does not cover — joining a different Wi-Fi network, for
+example.
+
+The private key is chmod `0600` **on Linux and macOS only**. Windows `chmod`
+cannot express owner-only, so there it relies on `%LOCALAPPDATA%` already being
+unreadable to other unprivileged users; restricting it properly on Windows would
+mean setting ACLs, which ShareBox does not do yet.
 
 **What this does and does not buy you.** It encrypts traffic against passive
 sniffing on the network, which plain HTTP does not. It does *not* authenticate
