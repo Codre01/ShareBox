@@ -146,6 +146,7 @@ class SettingsUpdateBody(BaseModel):
     host_name: str | None = None
     launch_at_startup: bool | None = None
     port: int | None = None
+    use_https: bool | None = None
 
 
 @router.get("/health")
@@ -407,14 +408,17 @@ async def pairing_start(request: Request) -> dict[str, Any]:
     ctx = get_ctx()
     session = ctx.pairing.start_pairing()
     port = ctx.config.config.port
+    scheme = ctx.runtime.scheme
     lan_ip = primary_lan_address() or "127.0.0.1"
     # LAN IP only for now (QR + copy link). Friendly hostnames can return later.
-    pair_url = f"http://{lan_ip}:{port}/?pair={session['token']}"
+    pair_url = f"{scheme}://{lan_ip}:{port}/?pair={session['token']}"
     session["pair_url"] = pair_url
     session["pair_url_ip"] = pair_url
     session["lan_addresses"] = list_lan_addresses()
     session["port"] = port
     session["mdns_active"] = False
+    session["scheme"] = scheme
+    session["cert_fingerprint"] = ctx.runtime.cert_fingerprint
     ctx.runtime.active_pairing = session
     return session
 
@@ -643,6 +647,10 @@ async def get_settings(request: Request) -> dict[str, Any]:
         "launch_at_startup": cfg.launch_at_startup,
         "port": cfg.port,
         "installation_id": cfg.installation_id,
+        "use_https": cfg.use_https,
+        "control_port": ctx.config.effective_control_port(),
+        "cert_fingerprint": ctx.runtime.cert_fingerprint,
+        "https_active": ctx.runtime.use_https,
     }
 
 
@@ -671,6 +679,10 @@ async def update_settings(request: Request, body: SettingsUpdateBody) -> dict[st
             raise_http("INVALID_PORT", "Port must be between 1024 and 65535", 400)
         updates["port"] = body.port
         ctx.runtime.port = body.port
+    if body.use_https is not None:
+        # Takes effect on restart: the listener's TLS context is fixed when
+        # uvicorn binds, so flipping it live would mean dropping connections.
+        updates["use_https"] = body.use_https
     if updates:
         ctx.config.update(**updates)
     return await get_settings(request)

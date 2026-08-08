@@ -11,6 +11,8 @@ import webview
 
 from sharebox.app.config import ConfigStore
 from sharebox.app.main import create_app
+from sharebox.app.network import list_lan_addresses
+from sharebox.app.tls import CertificateStore
 from sharebox_desktop import opener
 from sharebox_desktop.startup import set_launch_at_startup
 from sharebox_desktop.tray import TRAY_NEEDS_RUNNING_LOOP, start_tray
@@ -66,15 +68,44 @@ class Api:
 def run_desktop() -> None:
     config = ConfigStore()
     port = config.config.port
+    use_https = config.config.use_https
     app = create_app()
 
-    def serve() -> None:
-        uvicorn.run(app, host=config.config.bind_host, port=port, log_level="info")
+    ssl_kwargs: dict = {}
+    if use_https:
+        certs = CertificateStore(config.app_data_dir)
+        paths = certs.ensure(list_lan_addresses(), config.config.host_name)
+        ssl_kwargs = {
+            "ssl_certfile": str(paths.certificate),
+            "ssl_keyfile": str(paths.key),
+        }
 
-    thread = threading.Thread(target=serve, name="sharebox-uvicorn", daemon=True)
-    thread.start()
-    if not _wait_port("127.0.0.1", port):
-        logger.error("Backend failed to start on port %s", port)
+    def serve() -> None:
+        uvicorn.run(
+            app,
+            host=config.config.bind_host,
+            port=port,
+            log_level="info",
+            **ssl_kwargs,
+        )
+
+    threading.Thread(target=serve, name="sharebox-uvicorn", daemon=True).start()
+
+    # The Control Center talks to a loopback-only plain-HTTP listener. Pointing
+    # the WebView at the HTTPS one instead would mean teaching it to trust a
+    # self-signed certificate, which WebView2 and WebKitGTK each refuse
+    # differently. Same app object, so both listeners share all state.
+    ui_port = port
+    if use_https:
+        ui_port = config.effective_control_port()
+
+        def serve_control() -> None:
+            uvicorn.run(app, host="127.0.0.1", port=ui_port, log_level="warning")
+
+        threading.Thread(target=serve_control, name="sharebox-uvicorn-ui", daemon=True).start()
+
+    if not _wait_port("127.0.0.1", ui_port):
+        logger.error("Backend failed to start on port %s", ui_port)
         return
 
     if config.config.launch_at_startup:
@@ -83,7 +114,7 @@ def run_desktop() -> None:
     window_holder: dict = {}
     api = Api(config, window_holder)
     # Same-origin with the API — avoids file:// CORS preflight failures in WebView2.
-    ui = f"http://127.0.0.1:{port}/host/control_center.html"
+    ui = f"http://127.0.0.1:{ui_port}/host/control_center.html"
     window = webview.create_window(
         "ShareBox",
         url=ui,

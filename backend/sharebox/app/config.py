@@ -33,6 +33,13 @@ class AppConfig(BaseModel):
     installation_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     pairing_ttl_seconds: int = 300
     debug: bool = False
+    # Serve the LAN over HTTPS with a self-signed certificate. Off by default:
+    # it costs the user a one-time browser warning per device.
+    use_https: bool = False
+    # Loopback-only plain-HTTP port for the Control Center window, used when
+    # HTTPS is on so the WebView never has to trust a self-signed certificate.
+    # 0 means "port + 1".
+    control_port: int = 0
 
 
 class ConfigStore:
@@ -69,6 +76,9 @@ class ConfigStore:
         self._config = AppConfig.model_validate(data)
         self._write(self._config)
         return self._config
+
+    def effective_control_port(self) -> int:
+        return self._config.control_port or self._config.port + 1
 
     def shared_folder_path(self) -> Path:
         path = Path(self._config.shared_folder)
