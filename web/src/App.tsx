@@ -9,12 +9,13 @@ import {
   getToken,
   storeCredentials,
   subscribeEvents,
+  Transfer,
 } from "./api";
 
 type Dialog =
   | null
   | { type: "upload" }
-  | { type: "uploading"; files: { name: string; pct: number }[] }
+  | { type: "uploading"; names: string[]; pct: number }
   | { type: "uploadDone"; count: number }
   | { type: "uploadFail"; message: string }
   | { type: "preview"; item: FileItem }
@@ -87,7 +88,8 @@ export default function App() {
   const [pairing, setPairing] = useState(false);
   const [dialog, setDialog] = useState<Dialog>(null);
   const [offline, setOffline] = useState(false);
-  const [tab, setTab] = useState<"files" | "clipboard">("files");
+  const [tab, setTab] = useState<"files" | "clipboard" | "activity">("files");
+  const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [clipItems, setClipItems] = useState<ClipboardItem[]>([]);
   const [clipDraft, setClipDraft] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -120,9 +122,15 @@ export default function App() {
     setClipItems(res.items);
   }, []);
 
+  const refreshTransfers = useCallback(async () => {
+    const res = await api.transfers();
+    setTransfers(res.items);
+  }, []);
+
   const refresh = useCallback(async () => {
     try {
       if (tab === "clipboard") await refreshClipboard();
+      else if (tab === "activity") await refreshTransfers();
       else await refreshFiles();
       setError(null);
       setOffline(false);
@@ -137,7 +145,7 @@ export default function App() {
         setError(err.message || "Could not reach ShareBox host");
       }
     }
-  }, [tab, refreshClipboard, refreshFiles]);
+  }, [tab, refreshClipboard, refreshFiles, refreshTransfers]);
 
   useEffect(() => {
     (async () => {
@@ -203,8 +211,9 @@ export default function App() {
     return subscribeEvents((kind) => {
       if (kind === "clipboard_changed") void refreshClipboard().catch(() => undefined);
       if (kind === "fs_changed" && tab === "files") void refreshFiles().catch(() => undefined);
+      if (kind === "transfer" && tab === "activity") void refreshTransfers().catch(() => undefined);
     });
-  }, [authed, tab, refreshClipboard, refreshFiles]);
+  }, [authed, tab, refreshClipboard, refreshFiles, refreshTransfers]);
 
   // A selection only makes sense for what is on screen right now.
   useEffect(() => {
@@ -269,16 +278,13 @@ export default function App() {
     // Snapshot immediately — FileList is live and becomes empty if the input is cleared.
     const selected = Array.from(fileList);
     if (selected.length === 0) return;
-    setDialog({
-      type: "uploading",
-      files: selected.map((f) => ({ name: f.name, pct: 0 })),
-    });
+    const names = selected.map((f) => f.name);
+    setDialog({ type: "uploading", names, pct: 0 });
     try {
       const result = await api.upload(selected, (pct) => {
-        setDialog({
-          type: "uploading",
-          files: selected.map((f) => ({ name: f.name, pct })),
-        });
+        // One request carries every file, so the browser only reports overall
+        // progress. Showing that figure per-file would be a guess.
+        setDialog({ type: "uploading", names, pct });
       });
       const uploaded = result.files?.length ?? selected.length;
       setDialog({ type: "uploadDone", count: uploaded });
@@ -357,6 +363,15 @@ export default function App() {
             />
             Clipboard
           </label>
+          <label className="seg-opt">
+            <input
+              type="radio"
+              name="tab"
+              checked={tab === "activity"}
+              onChange={() => setTab("activity")}
+            />
+            Activity
+          </label>
         </div>
         {tab === "files" && (
           <>
@@ -416,7 +431,48 @@ export default function App() {
       </header>
 
       <main className="app-body">
-        {tab === "clipboard" ? (
+        {tab === "activity" ? (
+          transfers.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-icon">
+                <IconFile />
+              </div>
+              <div style={{ fontFamily: "var(--font-heading)", fontSize: 15 }}>No activity yet</div>
+              <div className="muted" style={{ marginTop: 4 }}>
+                Files you upload or download will be listed here
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {transfers.map((t) => (
+                <div className="card elev-sm file-row" key={t.transfer_id}>
+                  <div
+                    className="file-icon"
+                    title={t.direction === "upload" ? "Sent to host" : "Received from host"}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                      {t.direction === "upload" ? (
+                        <path d="M12 20V8M6 13l6-6 6 6" />
+                      ) : (
+                        <path d="M12 4v12M6 11l6 6 6-6" />
+                      )}
+                    </svg>
+                  </div>
+                  <div style={{ marginLeft: 12, flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {t.name}
+                    </div>
+                    <div className="card-meta">
+                      {t.direction === "upload" ? "Uploaded" : "Downloaded"}
+                      {t.size != null && ` · ${formatSize(t.size)}`}
+                      {` · ${formatIsoRelative(t.created_at)}`}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
+        ) : tab === "clipboard" ? (
           <>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 24 }}>
               <textarea
@@ -627,19 +683,19 @@ export default function App() {
             )}
             {dialog.type === "uploading" && (
               <>
-                <div className="dialog-title">Uploading</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                  {dialog.files.map((u) => (
-                    <div key={u.name}>
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 6 }}>
-                        <span>{u.name}</span>
-                        <span className="muted">{u.pct}%</span>
-                      </div>
-                      <div className="progress-track">
-                        <div className="progress-fill" style={{ width: `${u.pct}%` }} />
-                      </div>
-                    </div>
-                  ))}
+                <div className="dialog-title">
+                  Uploading {dialog.names.length} file{dialog.names.length === 1 ? "" : "s"}
+                </div>
+                <div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 6 }}>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {dialog.names.length === 1 ? dialog.names[0] : `${dialog.names.length} items`}
+                    </span>
+                    <span className="muted">{dialog.pct}%</span>
+                  </div>
+                  <div className="progress-track">
+                    <div className="progress-fill" style={{ width: `${dialog.pct}%` }} />
+                  </div>
                 </div>
               </>
             )}

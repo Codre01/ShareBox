@@ -31,3 +31,5 @@ MAX_CLIPBOARD_ITEMS = 20
 # How many files/folders a single zip download request may name. The number of
 # files they expand to is capped separately by archive.MAX_ARCHIVE_ENTRIES.
 MAX_ARCHIVE_SELECTION = 500
+# Rolling activity log, not an audit trail — oldest entries fall off.
+MAX_TRANSFER_HISTORY = 500
