@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=ShareBox
+GenericName=Local network file sharing
+Comment=Share files with nearby phones and computers over Wi-Fi
+Exec=/opt/sharebox/ShareBox
+Icon=sharebox
+Terminal=false
+Categories=Network;FileTransfer;
+Keywords=share;files;lan;wifi;transfer;phone;tablet;
+StartupNotify=true
+StartupWMClass=ShareBox

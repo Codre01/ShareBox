@@ -1,14 +1,31 @@
 # ShareBox user guide
 
-ShareBox turns a folder on your Windows PC into a private share for phones and other devices on the **same Wi‑Fi**. No cloud account. No app install on the phone.
+ShareBox turns a folder on your PC into a private share for phones and other devices on the **same Wi‑Fi**. No cloud account. No app install on the phone.
 
 ## Install / run
 
-1. Open the [latest GitHub Release](https://github.com/Bolutifebabs8/ShareBox/releases/latest).
-2. Download **ShareBox.exe**.
-3. Double‑click to run.  
+Open the [latest GitHub Release](https://github.com/Bolutifebabs8/ShareBox/releases/latest), then follow your platform:
+
+### Windows
+
+1. Download **ShareBox.exe**.
+2. Double‑click to run.  
    - If SmartScreen appears: **More info → Run anyway**.  
    - There is **no installer** — this is a portable app. Put the exe somewhere stable (e.g. `Documents\ShareBox-App\`) if you like, or keep the Desktop shortcut created when you build from source.
+
+### Linux (Debian / Ubuntu / Mint)
+
+1. Download **sharebox_*.deb**.
+2. Install it:
+
+   ```bash
+   sudo apt install ./sharebox_0.1.0_amd64.deb
+   ```
+
+   Keep the `./` — that is what lets apt install the dependencies too.
+3. Launch **ShareBox** from your application menu, or run `sharebox`.
+
+More detail, including what to do if the tray icon or menu entry is missing: [linux-run.md](linux-run.md).
 
 Optional: in Control Center → Settings, enable **Launch at startup** so ShareBox comes back after reboot.
 
@@ -30,6 +47,7 @@ Optional: in Control Center → Settings, enable **Launch at startup** so ShareB
 | See status & LAN address | Open files / folders |
 | Pair / approve / rename / revoke devices | Upload into your device folder |
 | Change shared folder & settings | Download anything in the share |
+| | Download a folder, or **Select** several items, as one .zip |
 | Clipboard list (add / delete) | Clipboard tab |
 
 Closing the window usually leaves ShareBox running in the **system tray** — use tray → Quit to stop fully.
@@ -46,7 +64,7 @@ Closing the window usually leaves ShareBox running in the **system tray** — us
 - No internet / cloud sync  
 - No phone app store install  
 - No end-to-end encryption on the wire (LAN HTTP)  
-- No official macOS / Linux host builds yet  
+- No official macOS host build yet (Windows and Linux are packaged)  
 
 ## More help
 

@@ -38,11 +38,15 @@ desktop.ini
 *.sqlite3
 .sharebox-dev/
 
-# Packaging outputs (keep scripts under build/)
+# Packaging outputs (keep scripts and deb assets under build/)
 build/output/
 build/pyi-work/
+build/deb-root/
 build/*.spec
 *.msi
 *.exe
+*.deb
 !build/*.ps1
+!build/*.sh
+!build/linux/*.spec
 

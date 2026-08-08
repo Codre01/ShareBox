@@ -7,6 +7,7 @@ import mimetypes
 import uuid
 from pathlib import Path
 from typing import Annotated, Any
+from urllib.parse import quote
 
 import aiofiles
 from fastapi import (
@@ -22,6 +23,13 @@ from fastapi import (
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
+from sharebox.app.archive import (
+    ArchiveTooLargeError,
+    TicketStore,
+    archive_filename,
+    collect_entries,
+    iter_zip,
+)
 from sharebox.app.auth import AuthService, PairingService
 from sharebox.app.config import ConfigStore
 from sharebox.app.db import Database, TrustedDevice
@@ -30,6 +38,7 @@ from sharebox.app.events import bus
 from sharebox.app.files import FilesystemService, PathEscapeError
 from sharebox.app.network import list_lan_addresses, primary_lan_address
 from sharebox.app.security import (
+    MAX_ARCHIVE_SELECTION,
     MAX_CLIPBOARD_CHARS,
     MAX_CLIPBOARD_ITEMS,
     MAX_TRANSFER_HISTORY,
@@ -61,6 +70,7 @@ class AppContext:
         self.auth = auth
         self.pairing = pairing
         self.runtime = runtime
+        self.tickets = TicketStore()
 
 
 _ctx: AppContext | None = None
@@ -154,6 +164,10 @@ class PairDeclineBody(BaseModel):
 
 class RenameDeviceBody(BaseModel):
     display_name: str = Field(min_length=1, max_length=80)
+
+
+class ArchiveTicketBody(BaseModel):
+    paths: list[str] = Field(min_length=1, max_length=MAX_ARCHIVE_SELECTION)
 
 
 class SettingsUpdateBody(BaseModel):
@@ -272,6 +286,71 @@ async def download_file(
         path=target,
         filename=target.name,
         media_type=media or "application/octet-stream",
+    )
+
+
+@router.post("/files/archive/ticket")
+async def create_archive_ticket(
+    body: ArchiveTicketBody,
+    device: TrustedDevice = Depends(require_device),
+) -> dict[str, Any]:
+    """Mint a short-lived ticket for a zip download.
+
+    The browser cannot attach the device token to a native download
+    navigation, so the authenticated request happens here and the navigation
+    spends the ticket.
+    """
+    ctx = get_ctx()
+    try:
+        entries = collect_entries(ctx.fs, body.paths)
+    except PathEscapeError:
+        raise_http("PATH_ESCAPE", "Invalid path", 400)
+    except FileNotFoundError:
+        raise_http("NOT_FOUND", "One or more items no longer exist", 404)
+    except ArchiveTooLargeError as exc:
+        raise_http("ARCHIVE_TOO_LARGE", str(exc), 413)
+    if not entries:
+        raise_http("ARCHIVE_EMPTY", "Nothing to download", 400)
+
+    filename = archive_filename(ctx.fs, body.paths)
+    ticket = ctx.tickets.issue(device.device_id, body.paths, filename)
+    return {
+        "ticket": ticket,
+        "filename": filename,
+        "file_count": len(entries),
+        "expires_in": int(ctx.tickets.ttl_seconds),
+    }
+
+
+@router.get("/files/archive")
+async def download_archive(ticket: str = Query(...)) -> StreamingResponse:
+    """Stream a zip for a previously issued ticket. Auth is the ticket itself."""
+    ctx = get_ctx()
+    redeemed = ctx.tickets.redeem(ticket)
+    if not redeemed:
+        raise_http("INVALID_TICKET", "Download link expired — try again", 410)
+
+    device = ctx.db.get_device(redeemed.device_id)
+    if not device or device.revoked_at:
+        raise_http("UNAUTHORIZED", "Device is no longer trusted", 401)
+
+    try:
+        entries = collect_entries(ctx.fs, redeemed.paths)
+    except PathEscapeError:
+        raise_http("PATH_ESCAPE", "Invalid path", 400)
+    except FileNotFoundError:
+        raise_http("NOT_FOUND", "One or more items no longer exist", 404)
+    except ArchiveTooLargeError as exc:
+        raise_http("ARCHIVE_TOO_LARGE", str(exc), 413)
+
+    quoted = quote(redeemed.filename)
+    return StreamingResponse(
+        iter_zip(entries),
+        media_type="application/zip",
+        headers={
+            # No Content-Length: the size is not known until the stream ends.
+            "Content-Disposition": f"attachment; filename*=UTF-8''{quoted}",
+        },
     )
 
 
@@ -646,7 +725,7 @@ async def update_settings(request: Request, body: SettingsUpdateBody) -> dict[st
     if body.launch_at_startup is not None:
         updates["launch_at_startup"] = body.launch_at_startup
         try:
-            from sharebox.app.startup_windows import set_launch_at_startup
+            from sharebox.app.startup import set_launch_at_startup
 
             set_launch_at_startup(body.launch_at_startup)
         except Exception:
