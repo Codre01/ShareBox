@@ -4,7 +4,6 @@ import logging
 import socket
 import threading
 import time
-import webbrowser
 from pathlib import Path
 
 import uvicorn
@@ -12,8 +11,9 @@ import webview
 
 from sharebox.app.config import ConfigStore
 from sharebox.app.main import create_app
+from sharebox_desktop import opener
 from sharebox_desktop.startup import set_launch_at_startup
-from sharebox_desktop.tray import start_tray
+from sharebox_desktop.tray import TRAY_NEEDS_RUNNING_LOOP, start_tray
 
 logger = logging.getLogger("sharebox.desktop")
 UI_DIR = Path(__file__).resolve().parent
@@ -45,9 +45,6 @@ class Api:
         return None
 
     def open_folder(self, path: str) -> None:
-        import os
-        from pathlib import Path
-
         target = Path(path).resolve()
         shared = Path(self.config.config.shared_folder).resolve()
         try:
@@ -56,15 +53,10 @@ class Api:
             # Allow opening the shared root itself only.
             if target != shared:
                 raise ValueError("Folder is outside the ShareBox shared folder")
-        os.startfile(str(target))  # type: ignore[attr-defined]
+        opener.open_path(target)
 
     def open_url(self, url: str) -> None:
-        from urllib.parse import urlparse
-
-        parsed = urlparse(url)
-        if parsed.scheme not in {"http", "https"}:
-            raise ValueError("Only http/https URLs are allowed")
-        webbrowser.open(url)
+        opener.open_url(url)
 
     def set_startup(self, enabled: bool) -> None:
         set_launch_at_startup(enabled)
@@ -102,9 +94,7 @@ def run_desktop() -> None:
     )
     window_holder["window"] = window
 
-    def on_shown() -> None:
-        # Empty base = same origin (/api/v1/...)
-        window.evaluate_js("window.__SHAREBOX_API__ = '';")
+    tray_holder: dict = {}
 
     def show_window() -> None:
         try:
@@ -114,11 +104,25 @@ def run_desktop() -> None:
             logger.exception("Could not show window")
 
     def quit_app() -> None:
+        icon = tray_holder.pop("icon", None)
+        if icon is not None:
+            try:
+                icon.stop()
+            except Exception:
+                logger.exception("Could not stop tray icon")
         try:
             window.destroy()
         except Exception:
             pass
 
+    def on_shown() -> None:
+        # Empty base = same origin (/api/v1/...)
+        window.evaluate_js("window.__SHAREBOX_API__ = '';")
+        if TRAY_NEEDS_RUNNING_LOOP and "icon" not in tray_holder:
+            # GTK's main loop is up now, so the indicator can attach to it.
+            tray_holder["icon"] = start_tray(on_open=show_window, on_quit=quit_app)
+
     window.events.shown += on_shown
-    start_tray(on_open=show_window, on_quit=quit_app)
+    if not TRAY_NEEDS_RUNNING_LOOP:
+        tray_holder["icon"] = start_tray(on_open=show_window, on_quit=quit_app)
     webview.start(debug=bool(config.config.debug))

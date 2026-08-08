@@ -13,9 +13,11 @@ Thanks for helping. ShareBox is intentionally small: a local host app + a browse
 | **Tests** | Backend pytest coverage for pairing, files, auth edges |
 | **Security** | See [docs/security.md](docs/security.md) — prefer responsible disclosure |
 
-## Development setup (Windows)
+## Development setup
 
 Prerequisites: **Python 3.12+**, **Node.js 20+**, Git.
+
+### Windows
 
 ```powershell
 git clone https://github.com/Bolutifebabs8/ShareBox.git
@@ -31,6 +33,28 @@ cd ..
 python -m sharebox_desktop
 ```
 
+### Linux (Debian / Ubuntu / Mint)
+
+The Control Center uses pywebview's GTK backend and the tray uses AppIndicator,
+so both come from system packages rather than pip:
+
+```bash
+sudo apt install python3-venv python3-pip python3-gi \
+    gir1.2-gtk-3.0 gir1.2-webkit2-4.1 gir1.2-ayatanaappindicator3-0.1
+
+git clone https://github.com/Bolutifebabs8/ShareBox.git
+cd ShareBox
+# --system-site-packages lets the venv see python3-gi; pip installs still win.
+python3 -m venv --system-site-packages .venv
+.venv/bin/pip install -e "./backend[dev]"
+.venv/bin/pip install -e "./desktop"
+(cd web && npm install && npm run build)
+.venv/bin/python -m sharebox_desktop
+```
+
+Building `PyGObject` from pip instead (other distros) needs
+`libgirepository1.0-dev` and `libcairo2-dev`; then `pip install -e "./desktop[linux]"`.
+
 ### Useful commands
 
 | Task | Command |
@@ -41,7 +65,8 @@ python -m sharebox_desktop
 | Tests | `cd backend; pytest` |
 | Windows exe | `powershell -ExecutionPolicy Bypass -File build\build_windows.ps1` |
 
-App data (config, SQLite) lives under the OS app-data directory (e.g. `%LOCALAPPDATA%\ShareBox` on Windows).
+App data (config, SQLite) lives under the OS app-data directory: `%LOCALAPPDATA%\ShareBox`
+on Windows, `~/.config/sharebox` on Linux.
 
 ## Project map
 

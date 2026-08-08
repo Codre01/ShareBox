@@ -582,7 +582,7 @@ async def update_settings(request: Request, body: SettingsUpdateBody) -> dict[st
     if body.launch_at_startup is not None:
         updates["launch_at_startup"] = body.launch_at_startup
         try:
-            from sharebox.app.startup_windows import set_launch_at_startup
+            from sharebox.app.startup import set_launch_at_startup
 
             set_launch_at_startup(body.launch_at_startup)
         except Exception:
