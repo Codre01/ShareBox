@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Troubleshooting guide
+    url: https://github.com/Bolutifebabs8/ShareBox/blob/master/docs/troubleshooting.md
+    about: Common fixes for Wi‑Fi, SmartScreen, pairing, and uploads
+  - name: User guide
+    url: https://github.com/Bolutifebabs8/ShareBox/blob/master/docs/user-guide.md
+    about: How to download, pair, and use ShareBox

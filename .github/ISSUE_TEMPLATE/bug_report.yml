@@ -1,0 +1,48 @@
+name: Bug report
+description: Something isn’t working as expected
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Check [docs/troubleshooting.md](https://github.com/Bolutifebabs8/ShareBox/blob/master/docs/troubleshooting.md) first — common Wi‑Fi / SmartScreen issues are covered there.
+  - type: dropdown
+    id: run_mode
+    attributes:
+      label: How are you running ShareBox?
+      options:
+        - Downloaded ShareBox.exe from GitHub Releases
+        - Built from source (`python -m sharebox_desktop`)
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Host OS
+      placeholder: "e.g. Windows 11 23H2"
+    validations:
+      required: true
+  - type: textarea
+    id: what_happened
+    attributes:
+      label: What happened?
+      description: What you expected vs what you saw.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / screenshots
+      description: Control Center errors, terminal output, or screenshots (optional).

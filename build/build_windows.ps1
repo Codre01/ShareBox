@@ -26,22 +26,54 @@ New-Item -ItemType Directory -Force -Path $Out | Out-Null
 
 Write-Host "==> PyInstaller onefile ShareBox"
 $entry = Join-Path $Root "desktop\sharebox_desktop\__main__.py"
+$icon = Join-Path $Root "desktop\sharebox_desktop\assets\sharebox.ico"
+if (-not (Test-Path $icon)) {
+  throw "Missing app icon: $icon"
+}
+# Unlock previous artifact if a running ShareBox still has it open.
+Get-Process -Name ShareBox -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Start-Sleep -Seconds 1
+
 pyinstaller `
   --noconfirm `
   --clean `
   --name ShareBox `
   --onefile `
   --windowed `
+  --icon $icon `
   --paths (Join-Path $Root "backend") `
   --paths (Join-Path $Root "desktop") `
   --add-data "$(Join-Path $Root 'desktop\sharebox_desktop\control_center.html');sharebox_desktop" `
   --add-data "$(Join-Path $Root 'desktop\sharebox_desktop\control_center.js');sharebox_desktop" `
   --add-data "$(Join-Path $Root 'desktop\sharebox_desktop\nocturne.css');sharebox_desktop" `
+  --add-data "$(Join-Path $Root 'desktop\sharebox_desktop\assets');sharebox_desktop/assets" `
   --add-data "$(Join-Path $Root 'backend\sharebox\static');sharebox/static" `
+  --add-data "$(Join-Path $Root 'backend\sharebox\host');sharebox/host" `
   --distpath $Out `
   --workpath (Join-Path $Root "build\pyi-work") `
   --specpath (Join-Path $Root "build") `
   $entry
+if ($LASTEXITCODE -ne 0) {
+  throw "PyInstaller failed with exit code $LASTEXITCODE (is ShareBox.exe still running?)"
+}
+
+$exe = Join-Path $Out "ShareBox.exe"
+if (-not (Test-Path $exe)) {
+  throw "Build finished but ShareBox.exe was not found at $exe"
+}
+
+# Portable build: create a Desktop shortcut so the app is easy to launch.
+# (There is no Windows installer yet — this is plug-and-play .exe distribution.)
+$desktop = [Environment]::GetFolderPath("Desktop")
+$shortcutPath = Join-Path $desktop "ShareBox.lnk"
+$shell = New-Object -ComObject WScript.Shell
+$shortcut = $shell.CreateShortcut($shortcutPath)
+$shortcut.TargetPath = $exe
+$shortcut.WorkingDirectory = $Out
+$shortcut.IconLocation = "$exe,0"
+$shortcut.Description = "ShareBox"
+$shortcut.Save()
+Write-Host "Desktop shortcut: $shortcutPath"
 
 Write-Host "Artifacts in $Out"
 Get-ChildItem $Out

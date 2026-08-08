@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import logging
 import threading
+from pathlib import Path
 from typing import Callable
 
 logger = logging.getLogger("sharebox.tray")
+ASSETS = Path(__file__).resolve().parent / "assets"
 
 
 def start_tray(
@@ -22,6 +24,10 @@ def start_tray(
         return
 
     def icon_image():
+        logo = ASSETS / "sharebox-logo.png"
+        if logo.is_file():
+            img = Image.open(logo).convert("RGBA")
+            return img.resize((64, 64), Image.Resampling.LANCZOS)
         img = Image.new("RGB", (64, 64), color=(22, 24, 38))
         draw = ImageDraw.Draw(img)
         draw.rounded_rectangle((12, 12, 52, 52), radius=10, outline=(145, 132, 217), width=3)

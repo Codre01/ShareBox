@@ -1,67 +1,90 @@
 # ShareBox
 
-Local-network file sharing between your computer and nearby devices. No cloud, no cables, no phone app — just a folder on your PC and a browser on your phone.
+**Share files between your PC and nearby phones — over Wi‑Fi. No cloud. No cables. No phone app.**
 
-## Status
+Your computer runs ShareBox. Everyone else just opens a browser.
 
-Windows V1 in active development. See [docs/ShareBox Product Documentation.md](docs/ShareBox%20Product%20Documentation.md) for the full product and engineering specification.
+---
 
-## Architecture
+## Download (Windows)
 
-| Layer | Stack |
-|-------|--------|
-| Backend | Python 3.12 + FastAPI |
-| Web client | TypeScript + Vite + React (served by the host) |
-| Desktop | PyWebView Control Center + system tray |
-| Persistence | SQLite + JSON config in OS app-data |
+| | |
+|---|---|
+| **Get the app** | [**Download ShareBox.exe**](https://github.com/Bolutifebabs8/ShareBox/releases/latest) |
+| **Requirements** | Windows 10/11 (WebView2 is usually already installed) |
+| **Install?** | No installer — download, double‑click, run |
 
-## Development
+### Quick start (for people who just want to use it)
 
-### Prerequisites
+1. Download **ShareBox.exe** from the [latest release](https://github.com/Bolutifebabs8/ShareBox/releases/latest).
+2. Double‑click it. Windows may warn about an unknown app — choose **More info → Run anyway** (normal for new open‑source apps that aren’t code‑signed yet).
+3. ShareBox opens a Control Center window and shares a folder (default: `Documents\ShareBox` or `~\ShareBox`).
+4. On your phone (same Wi‑Fi), tap **Pair new device** in Control Center and scan the QR code — or open the URL shown.
+5. Approve the device on the PC, give it a name, then browse / upload / download in the phone browser.
 
-- Python 3.12+
-- Node.js 20+
+Full walkthrough, tips, and “what if it doesn’t work”: **[docs/user-guide.md](docs/user-guide.md)** · **[docs/troubleshooting.md](docs/troubleshooting.md)**
 
-### Backend
+> **macOS / Linux hosts:** not packaged yet. Phones on any OS already work via the browser once a Windows host is running. Help welcome — see [Contributing](#for-contributors).
 
-```bash
-cd backend
+---
+
+## How it works
+
+```text
+┌─────────────────────────┐         same Wi‑Fi          ┌──────────────────┐
+│  Your PC (ShareBox)     │ ◄──────────────────────────► │ Phone / tablet   │
+│  • Control Center       │                              │ browser only     │
+│  • Shared folder        │                              │ (no app install) │
+│  • Local server :8765   │                              └──────────────────┘
+└─────────────────────────┘
+```
+
+- Files stay on your computer. Nothing is uploaded to the internet.
+- Devices must be **paired and approved** once; you can rename or revoke them later.
+- Clipboard snippets can be shared among trusted devices (capped list).
+
+**Security note (V1):** traffic is HTTP on your LAN with strong device tokens. Fine for home/trusted networks — not for hostile public Wi‑Fi with sensitive files. Details: [docs/security.md](docs/security.md).
+
+---
+
+## Repository layout
+
+| Path | What it is |
+|------|------------|
+| [`backend/`](backend/) | FastAPI server, pairing, files, clipboard, SQLite |
+| [`desktop/`](desktop/) | Windows Control Center (PyWebView) + tray |
+| [`web/`](web/) | React client served to phones/browsers |
+| [`build/`](build/) | Windows packaging scripts (`build_windows.ps1`) |
+| [`docs/`](docs/) | User guide, troubleshooting, ADRs, product spec |
+| [`design/`](design/) | UI / design references |
+
+---
+
+## For contributors
+
+Want to suggest features, fix bugs, or help with **macOS / Linux** packaging? Start here:
+
+1. Read **[CONTRIBUTING.md](CONTRIBUTING.md)** — setup, workflow, good first areas.
+2. Skim **[docs/README.md](docs/README.md)** for the doc map and architecture notes.
+3. Open an [issue](https://github.com/Bolutifebabs8/ShareBox/issues) (bug or feature) before large changes when you can.
+
+```powershell
+git clone https://github.com/Bolutifebabs8/ShareBox.git
+cd ShareBox
 python -m venv .venv
-.venv\Scripts\activate          # Windows
-pip install -e ".[dev]"
-uvicorn sharebox.app.main:app --host 127.0.0.1 --port 8765 --reload
-```
-
-### Web client
-
-```bash
-cd web
-npm install
-npm run dev                     # http://127.0.0.1:5173 (proxies API)
-npm run build                   # outputs into backend/sharebox/static
-```
-
-### Desktop Control Center
-
-```bash
-cd desktop
-pip install -e .
+.\.venv\Scripts\Activate.ps1
+pip install -e ".\backend[dev]"
+pip install -e ".\desktop"
+cd web; npm install; npm run build; cd ..
 python -m sharebox_desktop
 ```
 
-### Tests
+Tests: `cd backend; pytest`
 
-```bash
-cd backend
-pytest
-```
+Build Windows exe: `powershell -ExecutionPolicy Bypass -File build\build_windows.ps1`
 
-## Security note (V1)
-
-ShareBox V1 uses HTTP on the local LAN with high-entropy device credentials. This protects against casual unauthorized access but does **not** provide confidentiality against a capable attacker on the same network. Do not use ShareBox on untrusted networks for sensitive files.
-
-Host administration (pairing approval, device revoke, settings) is restricted to the Control Center on the host computer (loopback). See [docs/security.md](docs/security.md) for the full hardening notes.
+---
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE). Use it, share it, fork it.

@@ -5,7 +5,7 @@
 - **Host admin APIs are loopback-only** (pairing start/approve/decline, devices, settings, sharing control, QR). LAN clients cannot self-pair or change the shared folder.
 - **`/status` on the LAN** no longer returns pairing tokens or the shared-folder path.
 - **Pairing claim secrets** — only the device that requested pairing can redeem the device token after approval.
-- **Upload size limits** — 512 MiB per file, 2 GiB per request.
+- **Upload size limits** — 1 GiB per file, 2 GiB per request.
 - **CORS** tightened (no `*` + credentials).
 - **Desktop shell** validates `open_url` (http/https only) and restricts `open_folder` to the shared folder.
 

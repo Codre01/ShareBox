@@ -1,0 +1,53 @@
+# ShareBox user guide
+
+ShareBox turns a folder on your Windows PC into a private share for phones and other devices on the **same Wi‑Fi**. No cloud account. No app install on the phone.
+
+## Install / run
+
+1. Open the [latest GitHub Release](https://github.com/Bolutifebabs8/ShareBox/releases/latest).
+2. Download **ShareBox.exe**.
+3. Double‑click to run.  
+   - If SmartScreen appears: **More info → Run anyway**.  
+   - There is **no installer** — this is a portable app. Put the exe somewhere stable (e.g. `Documents\ShareBox-App\`) if you like, or keep the Desktop shortcut created when you build from source.
+
+Optional: in Control Center → Settings, enable **Launch at startup** so ShareBox comes back after reboot.
+
+## First-time setup
+
+1. Confirm the **shared folder** (default is under your user profile, often `ShareBox`).
+2. Keep the Control Center window open (or leave ShareBox running in the tray).
+3. Click **Pair new device**.
+4. On your phone (same Wi‑Fi), scan the QR code or open the URL shown.
+5. On the PC, **approve** the request and give the device a clear name (this also names its upload folder).
+6. On the phone, browse files, upload, download, and use the shared clipboard.
+
+## Everyday use
+
+| On the PC (Control Center) | On the phone (browser) |
+|----------------------------|-------------------------|
+| See status & LAN address | Open files / folders |
+| Pair / approve / rename / revoke devices | Upload into your device folder |
+| Change shared folder & settings | Download anything in the share |
+| Clipboard list (add / delete) | Clipboard tab |
+
+Closing the window usually leaves ShareBox running in the **system tray** — use tray → Quit to stop fully.
+
+## Tips
+
+- **Same Wi‑Fi** is required. Guest/client isolation on some routers blocks device-to-device traffic — see [troubleshooting](troubleshooting.md).
+- Prefer `http://sharebox.local:8765` when mDNS works; otherwise use the IP shown in Control Center (e.g. `http://192.168.x.x:8765`).
+- Revoke devices you no longer trust from the Devices page.
+- Large uploads: stay on Wi‑Fi; don’t switch networks mid-transfer.
+
+## What ShareBox does *not* do (V1)
+
+- No internet / cloud sync  
+- No phone app store install  
+- No end-to-end encryption on the wire (LAN HTTP)  
+- No official macOS / Linux host builds yet  
+
+## More help
+
+- [Troubleshooting](troubleshooting.md)  
+- [Security notes](security.md)  
+- [GitHub Issues](https://github.com/Bolutifebabs8/ShareBox/issues)  

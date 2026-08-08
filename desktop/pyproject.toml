@@ -22,4 +22,4 @@ where = ["."]
 include = ["sharebox_desktop*"]
 
 [tool.setuptools.package-data]
-sharebox_desktop = ["*.html", "*.css", "*.js"]
+sharebox_desktop = ["*.html", "*.css", "*.js", "assets/*"]
