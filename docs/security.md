@@ -40,6 +40,7 @@ reachable from the network.
 - **Self-signed trust on first use** — with HTTPS on, the first connection from each device is only as trustworthy as the fingerprint check the user performs.
 - **Device tokens in `localStorage`** — any XSS in the web client could steal a token; keep the UI free of unsafe HTML.
 - **Trusted devices see the whole share** — by design for V1 “family folder” sharing; revoke devices you no longer trust.
+- **Editing is per-device and off by default** — pairing grants browse + upload only. Renaming and deleting require the host to tick *Allow this device to rename and delete files* for that device. Deletes move items to a hidden `.sharebox-trash/` folder inside the share; only the host (loopback) can empty it. A device with editing rights can still trash anything in the share, so grant it deliberately.
 - **Clipboard is shared among trusted devices** — treat it like a shared scratchpad, not a password vault.
 
 ## Report issues
