@@ -74,19 +74,12 @@ def create_app(app_data_dir: Path | None = None) -> FastAPI:
             config.shared_folder_path()
             if os.environ.get("SHAREBOX_DISABLE_WATCHER") != "1":
                 watcher.watch(fs.root)
-            if os.environ.get("SHAREBOX_DISABLE_MDNS") != "1":
+            # mDNS / sharebox.local disabled for now — mobile browsers were unreliable.
+            # Opt in later with SHAREBOX_ENABLE_MDNS=1 when we ship a friendly name again.
+            if os.environ.get("SHAREBOX_ENABLE_MDNS") == "1":
                 advertiser.start(runtime.lan_addresses)
-
-            async def _poll_mdns() -> None:
-                # Reflect background mDNS registration into status once it settles.
-                for _ in range(40):
-                    await asyncio.sleep(0.25)
-                    runtime.mdns_active = advertiser.active
-                    runtime.mdns_ip = advertiser.advertised_ip
-                    if advertiser.active:
-                        break
-
-            asyncio.create_task(_poll_mdns())
+                runtime.mdns_active = advertiser.active
+                runtime.mdns_ip = advertiser.advertised_ip
             runtime.state = ServiceState.SHARING
             runtime.sharing = True
             runtime.error = None

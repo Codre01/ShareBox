@@ -27,21 +27,17 @@ class RuntimeState:
 
     def as_dict(self) -> dict[str, Any]:
         port = self.port
-        ip_urls = [f"http://{a}:{port}" for a in self.lan_addresses]
-        local_url = f"http://sharebox.local:{port}"
-        # Prefer sharebox.local first when mDNS is up so UI/QR match the friendly name.
-        if self.mdns_active:
-            url_hints = [local_url, *ip_urls]
-        else:
-            url_hints = [*ip_urls, local_url] if self.lan_addresses else ip_urls
+        # V1 uses LAN IPs only — sharebox.local / mDNS confused mobile browsers
+        # (Android often fails; iOS treats .local and IP as different sites).
+        url_hints = [f"http://{a}:{port}" for a in self.lan_addresses]
         return {
             "state": self.state.value,
             "sharing": self.sharing,
             "error": self.error,
             "lan_addresses": self.lan_addresses,
             "port": port,
-            "mdns_active": self.mdns_active,
-            "mdns_ip": self.mdns_ip,
+            "mdns_active": False,
+            "mdns_ip": None,
             "url_hints": url_hints,
             "primary_url": url_hints[0] if url_hints else f"http://127.0.0.1:{port}",
             "active_pairing": self.active_pairing,

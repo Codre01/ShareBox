@@ -8,10 +8,6 @@
 4. Temporarily allow **Python** / **ShareBox** through Windows Firewall if prompted — private networks.
 5. Some routers enable **AP / client isolation** (common on guest Wi‑Fi). Switch to the main LAN or disable isolation.
 
-## `sharebox.local` doesn’t work
-
-mDNS is best-effort. Use the numeric IP shown in Control Center instead. iOS/Android support for `.local` varies by network.
-
 ## Windows SmartScreen / “Unknown publisher”
 
 Expected until the exe is code‑signed. Use **More info → Run anyway** if you trust the download from [this GitHub releases page](https://github.com/Bolutifebabs8/ShareBox/releases/latest). Prefer downloading only from that official repo.
@@ -28,7 +24,7 @@ Expected until the exe is code‑signed. Use **More info → Run anyway** if you
 1. Approve or decline on the **host** Control Center (other devices cannot self-approve).
 2. Start pairing again if the QR / link expired (pairing sessions time out).
 3. Don’t reuse one pairing link on multiple devices — start a new **Pair new device** session for each.
-4. For another PC: use **Copy link** (LAN IP URL). If the page won’t load, confirm both machines are on the same Wi‑Fi and try the IP shown in Control Center.
+4. For another PC: use **Copy link**. If the page won’t load, confirm both machines are on the same Wi‑Fi and that the IP in Control Center still matches your current network.
 
 ## Upload fails or says file too large
 

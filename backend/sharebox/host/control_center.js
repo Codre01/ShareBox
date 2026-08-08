@@ -77,13 +77,10 @@
       /^https?:\/\//,
       "",
     );
-    const ipHint = (s.lan_addresses && s.lan_addresses[0] ? `${s.lan_addresses[0]}:${s.port || 8765}` : "");
     const folder = (state.settings && state.settings.shared_folder) || "";
-    const mdnsNote = s.mdns_active
-      ? `sharebox.local points to ${s.mdns_ip || ipHint}`
-      : ipHint
-        ? `If sharebox.local fails, use ${ipHint}`
-        : "Waiting for network…";
+    const addressNote = s.lan_addresses && s.lan_addresses[0]
+      ? "Use this IP on the same Wi‑Fi, or Pair new device (QR / Copy link)."
+      : "Waiting for network…";
     return `
       <div style="max-width:560px;">
         <h6 style="color:var(--color-neutral-500);margin-bottom:var(--space-2);">Overview</h6>
@@ -106,7 +103,7 @@
               <span class="mono">${escapeHtml(primary)}</span>
               <button class="btn btn-ghost" style="margin-left:auto;flex:none;" id="btn-copy">Copy address</button>
             </div>
-            <div class="card-meta">${escapeHtml(mdnsNote)}</div>
+            <div class="card-meta">${escapeHtml(addressNote)}</div>
           </div>`
             : ""
         }
@@ -271,7 +268,7 @@
     dlg.innerHTML = `
       <div class="dialog">
         <div class="dialog-title">Pair a new device</div>
-        <div class="dialog-body">Scan the QR on a phone, or copy the link and open it on another PC (same Wi‑Fi). Then approve and name the device here.</div>
+        <div class="dialog-body">Scan the QR on a phone, or copy the IP link and open it on another PC (same Wi‑Fi). Then approve and name the device here.</div>
         <img src="${qrUrl}" alt="Pairing QR" width="180" height="180" style="align-self:center;border-radius:var(--radius-md);background:#fff;padding:8px;" />
         <div class="text-muted" style="text-align:center;font-size:12px;" id="pair-ttl">Expires soon</div>
         <div class="mono" style="text-align:center;font-size:11px;word-break:break-all;" id="pair-link">${escapeHtml(link)}</div>

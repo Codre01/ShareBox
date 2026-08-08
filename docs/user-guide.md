@@ -37,7 +37,7 @@ Closing the window usually leaves ShareBox running in the **system tray** — us
 ## Tips
 
 - **Same Wi‑Fi** is required. Guest/client isolation on some routers blocks device-to-device traffic — see [troubleshooting](troubleshooting.md).
-- Prefer `http://sharebox.local:8765` when mDNS works; otherwise use the IP shown in Control Center (e.g. `http://192.168.x.x:8765`).
+- Use the **IP address** shown in Control Center (e.g. `http://192.168.x.x:8765`). Friendly names like `sharebox.local` are disabled for now — they were unreliable on phones.
 - Revoke devices you no longer trust from the Devices page.
 - Large uploads: stay on Wi‑Fi; don’t switch networks mid-transfer.
 
