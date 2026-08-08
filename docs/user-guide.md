@@ -30,6 +30,7 @@ Optional: in Control Center → Settings, enable **Launch at startup** so ShareB
 | See status & LAN address | Open files / folders |
 | Pair / approve / rename / revoke devices | Upload into your device folder |
 | Change shared folder & settings | Download anything in the share |
+| | Download a folder, or **Select** several items, as one .zip |
 | Clipboard list (add / delete) | Clipboard tab |
 
 Closing the window usually leaves ShareBox running in the **system tray** — use tray → Quit to stop fully.

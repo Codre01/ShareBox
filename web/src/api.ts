@@ -160,6 +160,17 @@ export const api = {
       },
     );
   },
+  archiveTicket: (paths: string[]) =>
+    request<{
+      ticket: string;
+      filename: string;
+      file_count: number;
+      expires_in: number;
+    }>("/api/v1/files/archive/ticket", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paths }),
+    }),
   clipboard: () => request<{ items: ClipboardItem[] }>("/api/v1/clipboard"),
   shareClipboard: (text: string) =>
     request<{ item: ClipboardItem }>("/api/v1/clipboard", {
@@ -184,6 +195,19 @@ export async function downloadFile(path: string, filename: string) {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+export async function downloadArchive(paths: string[]): Promise<number> {
+  const { ticket, file_count } = await api.archiveTicket(paths);
+  // Hand the browser a plain link rather than fetching into a blob: the zip is
+  // streamed straight to disk instead of being held in the phone's memory.
+  const link = document.createElement("a");
+  link.href = `/api/v1/files/archive?ticket=${encodeURIComponent(ticket)}`;
+  link.rel = "noopener";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  return file_count;
 }
 
 export function subscribeEvents(onEvent: (kind: string) => void): () => void {
