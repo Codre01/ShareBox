@@ -106,7 +106,10 @@ class FilesystemService:
 
     @staticmethod
     def sanitize_filename(name: str) -> str:
-        name = Path(name).name
+        # Clients send Windows-style paths whatever the host OS is, but Path only
+        # treats "\" as a separator on Windows — normalise so a Linux host strips
+        # the same leading components a Windows host would.
+        name = Path(name.replace("\\", "/")).name
         name = INVALID_FOLDER_CHARS.sub("_", name).strip(" .")
         return name or "untitled"
 

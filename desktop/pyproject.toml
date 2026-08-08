@@ -14,6 +14,12 @@ dependencies = [
   "pillow>=10.0.0",
 ]
 
+[project.optional-dependencies]
+# PyGObject compiles against system GIR/GTK headers. On Debian/Ubuntu prefer the
+# distro packages (python3-gi, gir1.2-webkit2-4.1) with a venv created using
+# --system-site-packages; this extra is the fallback for other distros.
+linux = ["PyGObject>=3.42"]
+
 [project.scripts]
 sharebox = "sharebox_desktop.__main__:main"
 
